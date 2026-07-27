@@ -1,0 +1,6 @@
+{
+  "name": "JN OfficeOS",
+  "description": "Professional Cloud-Based Tax Practice Management System for Jain Agarwal & Co. - Accounting, Taxation, Finance & Loans.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

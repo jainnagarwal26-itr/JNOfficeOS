@@ -1,0 +1,477 @@
+// =========================================================================
+// JN OFFICEOS ENTERPRISE DATABASE BACKEND - GOOGLE APPS SCRIPT
+// =========================================================================
+// INSTRUCTIONS:
+// 1. Open your Google Sheet: https://docs.google.com/spreadsheets/d/17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ/edit
+// 2. Click Extensions -> Apps Script.
+// 3. Delete any default code and paste this script.
+// 4. Click the gear icon (Project Settings) on the left sidebar.
+// 5. Scroll to "Script Properties", and add:
+//    - Property: SPREADSHEET_ID
+//    - Value: 17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ
+// 6. Click Deploy -> New Deployment.
+// 7. Select "Web App" as deployment type.
+// 8. Configure:
+//    - Execute As: Me (your Google account)
+//    - Who Has Access: Anyone
+// 9. Click Deploy, authorize permissions, and copy the Web App URL.
+// 10. Paste this Web App URL in your .env as VITE_GOOGLE_APPS_SCRIPT_URL or in the App Settings.
+
+function getSpreadsheet() {
+  const SCRIPT_PROP = PropertiesService.getScriptProperties();
+  const spreadsheetId = SCRIPT_PROP.getProperty("SPREADSHEET_ID") || "17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ";
+  return SpreadsheetApp.openById(spreadsheetId);
+}
+
+function doGet(e) {
+  try {
+    const action = e.parameter.action;
+    const table = e.parameter.table;
+    const ss = getSpreadsheet();
+    
+    if (action === "readAll") {
+      const sheet = getOrCreateSheet(ss, table);
+      const data = readSheetData(sheet);
+      return createResponse({ success: true, data: data });
+    }
+    
+    return createResponse({ error: "Invalid GET action specified." }, 400);
+  } catch (err) {
+    return createResponse({ error: err.toString() }, 500);
+  }
+}
+
+function doPost(e) {
+  try {
+    const requestData = JSON.parse(e.postData.contents);
+    const action = requestData.action;
+    const table = requestData.table;
+    const ss = getSpreadsheet();
+    
+    const sheet = getOrCreateSheet(ss, table);
+    
+    if (action === "create") {
+      const result = createRecord(sheet, requestData.data);
+      return createResponse({ success: true, data: result });
+    } else if (action === "update") {
+      const result = updateRecord(sheet, requestData.idKey || "id", requestData.idValue, requestData.data);
+      return createResponse({ success: true, data: result });
+    } else if (action === "delete") {
+      const result = deleteRecord(sheet, requestData.idKey || "id", requestData.idValue);
+      return createResponse({ success: true, data: result });
+    } else if (action === "bulkSync") {
+      const result = bulkSyncRecords(sheet, requestData.idKey || "id", requestData.data);
+      return createResponse({ success: true, message: result });
+    }
+    
+    return createResponse({ error: "Invalid POST action specified." }, 400);
+  } catch (err) {
+    return createResponse({ error: err.toString() }, 500);
+  }
+}
+
+function createResponse(body, status) {
+  const response = ContentService.createTextOutput(JSON.stringify(body))
+    .setMimeType(ContentService.MimeType.JSON);
+  return response;
+}
+
+function matchesTableName(tableName, sheetName) {
+  if (!tableName || !sheetName) return false;
+  const t = tableName.toLowerCase();
+  const s = sheetName.toLowerCase();
+  if (t === s) return true;
+  
+  if (t.includes("staff") && s.includes("staff")) return true;
+  if (t.includes("user") && s.includes("user")) return true;
+  if (t.includes("client") && s.includes("client")) return true;
+  if (t.includes("service") && s.includes("service")) return true;
+  if (t.includes("invoice") && s.includes("invoice")) return true;
+  if (t.includes("receipt") && s.includes("receipt")) return true;
+  if (t.includes("expense") && s.includes("expense")) return true;
+  if (t.includes("case") && s.includes("case")) return true;
+  if (t.includes("audit") && s.includes("audit")) return true;
+  if (t.includes("followup") && s.includes("followup")) return true;
+  if (t.includes("task") && s.includes("task")) return true;
+  if (t.includes("document") && s.includes("document")) return true;
+  
+  return false;
+}
+
+function getOrCreateSheet(ss, name) {
+  const sheets = ss.getSheets();
+  let sheet = null;
+  for (let i = 0; i < sheets.length; i++) {
+    const sName = sheets[i].getName();
+    if (matchesTableName(name, sName)) {
+      sheet = sheets[i];
+      break;
+    }
+  }
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+  
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    var headers = [];
+    var sName = sheet.getName();
+    if (matchesTableName("jn_clients", sName)) {
+      headers = ["Client ID", "Client Name", "Trade Name", "Business Name", "Client Source", "Referred By", "GSTIN", "PAN", "Aadhaar", "TAN", "Udyam Registration", "FSSAI Number", "IEC Number", "Professional Tax Number", "PF Number", "ESIC Number", "CIN", "DIN", "MSME", "Address", "City", "State", "Pin Code", "Country", "Bank Name", "Account Holder", "Account Number", "IFSC", "Branch", "UPI", "Business Nature", "Business Type", "Constitution", "Date Of Incorporation", "Date Of Registration", "Financial Year", "Assessment Year", "Email", "Mobile", "Alternate Mobile", "Whatsapp", "Website", "Status", "Tags", "Assigned Staff IDs", "Internal Notes", "Last Updated", "Is_Demo"];
+    } else if (matchesTableName("jn_client_contacts", sName)) {
+      headers = ["Contact_ID", "Client_ID", "Contact_Name", "Role", "Email", "Phone", "Is_Primary", "Is_Demo"];
+    } else if (matchesTableName("jn_services", sName)) {
+      headers = ["Service ID", "Service Name", "Category", "Standard Fee (INR)", "Description", "Created At"];
+    } else if (matchesTableName("jn_invoices", sName)) {
+      headers = ["Invoice Number", "Invoice Date", "Client ID", "Client Name", "Service ID List", "Sub Total (INR)", "GST Amount (INR)", "Total Amount (INR)", "Due Date", "Status", "Created At"];
+    } else if (matchesTableName("jn_receipts", sName)) {
+      headers = ["Receipt Number", "Receipt Date", "Invoice Number", "Client Name", "Amount Received (INR)", "Payment Mode", "Transaction Ref No", "Remarks", "Created At"];
+    } else if (matchesTableName("jn_expenses", sName)) {
+      headers = ["Expense ID", "Date", "Category", "Paid To", "Amount (INR)", "Payment Mode", "Reference Number", "Remarks", "Created At"];
+    } else if (matchesTableName("jn_users", sName)) {
+      headers = ["User ID", "Email", "Password Hash", "Role", "Status", "Created At"];
+    } else if (matchesTableName("jn_staff", sName)) {
+      headers = ["Staff_ID", "User_ID", "First_Name", "Last_Name", "Department_ID", "Designation_ID", "Phone", "Email", "Status", "Is_Demo"];
+    } else if (matchesTableName("jn_audit_log", sName)) {
+      headers = ["Log ID", "Timestamp", "User Email", "User Name", "Role", "Action", "Category", "Details"];
+    } else if (matchesTableName("jn_cases", sName)) {
+      headers = ["Case ID", "Client ID", "Client Name", "Assigned Staff IDs", "Service ID", "Service Name", "Priority", "Status", "Progress", "Start Date", "Target Date", "Updated At"];
+    } else if (matchesTableName("jn_followups", sName)) {
+      headers = ["Case ID", "Event ID", "Timestamp", "Title", "Type", "Details", "User Email", "User Name"];
+    } else if (matchesTableName("jn_tasks", sName)) {
+      headers = ["Case ID", "Task ID", "Title", "Status", "Completed At", "Completed By"];
+    } else if (matchesTableName("jn_documents", sName)) {
+      headers = ["Case ID", "Document ID", "File Name", "File Type", "Uploaded At", "Uploaded By"];
+    } else {
+      headers = ["id", "Created At"];
+    }
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sheet;
+}
+
+function normalizeKey(key) {
+  if (key === null || key === undefined) return "";
+  return key.toString().toLowerCase().replace(/[\s_\-]/g, "");
+}
+
+function hasKeyInItem(header, item) {
+  if (!header) return false;
+  const normHeader = normalizeKey(header);
+  for (let key in item) {
+    if (normalizeKey(key) === normHeader) {
+      return true;
+    }
+  }
+  if (normHeader === "firstname" || normHeader === "lastname") {
+    return hasKeyInItem("name", item) || hasKeyInItem("clientname", item);
+  }
+  if (normHeader === "phone" || normHeader === "mobile") {
+    return hasKeyInItem("phone", item) || hasKeyInItem("mobile", item) || hasKeyInItem("contact", item);
+  }
+  if (normHeader === "designationid" || normHeader === "designation" || normHeader === "role") {
+    return hasKeyInItem("designation", item) || hasKeyInItem("role", item) || hasKeyInItem("designationid", item);
+  }
+  if (normHeader === "departmentid" || normHeader === "department") {
+    return hasKeyInItem("department", item) || hasKeyInItem("departmentid", item);
+  }
+  return false;
+}
+
+function getValueForHeader(header, item, idKey, idValue) {
+  if (!header) return "";
+  const normHeader = normalizeKey(header);
+  
+  // 1. Direct or normalized match in item
+  for (let key in item) {
+    if (normalizeKey(key) === normHeader) {
+      return item[key];
+    }
+  }
+  
+  // 2. Fallbacks for ID columns
+  if (normHeader === "id" || normHeader === "userid" || normHeader === "staffid" || normHeader === "clientid" || normHeader === "serviceid" || normHeader === "expenseid" || normHeader === "invoiceid" || normHeader === "receiptid" || normHeader === "logid" || normHeader === "caseid" || normHeader === "taskid" || normHeader === "documentid" || normHeader === "eventid") {
+    if (idKey && normalizeKey(idKey) === normHeader && idValue !== undefined) {
+      return idValue;
+    }
+    const idKeys = ["id", "userid", "staffid", "clientid", "serviceid", "expenseid", "invoiceid", "receiptid", "logid", "caseid", "taskid", "documentid", "eventid", "invoicenumber", "receiptnumber"];
+    for (let key in item) {
+      if (idKeys.includes(normalizeKey(key))) {
+        return item[key];
+      }
+    }
+    if (idValue !== undefined) return idValue;
+  }
+  
+  // 3. Name split fallback (e.g. for First_Name, Last_Name when item only has Name)
+  if (normHeader === "firstname" || normHeader === "lastname") {
+    let fullName = "";
+    for (let key in item) {
+      const nKey = normalizeKey(key);
+      if (nKey === "name" || nKey === "clientname" || nKey === "username") {
+        fullName = item[key];
+        break;
+      }
+    }
+    if (fullName) {
+      const parts = fullName.toString().trim().split(/\s+/);
+      if (normHeader === "firstname") {
+        return parts[0];
+      } else {
+        return parts.slice(1).join(" ");
+      }
+    }
+  }
+
+  // 4. Fallback for Phone / Mobile
+  if (normHeader === "phone" || normHeader === "mobile") {
+    for (let key in item) {
+      const nKey = normalizeKey(key);
+      if (nKey === "phone" || nKey === "mobile" || nKey === "contact") {
+        return item[key];
+      }
+    }
+  }
+
+  // 5. Fallback for Designation / Role
+  if (normHeader === "designation" || normHeader === "designationid" || normHeader === "role") {
+    for (let key in item) {
+      const nKey = normalizeKey(key);
+      if (nKey === "designation" || nKey === "role" || nKey === "designationid") {
+        return item[key];
+      }
+    }
+  }
+
+  // 6. Fallback for Department / Department_ID
+  if (normHeader === "department" || normHeader === "departmentid") {
+    for (let key in item) {
+      const nKey = normalizeKey(key);
+      if (nKey === "department" || nKey === "departmentid") {
+        return item[key];
+      }
+    }
+  }
+  
+  return "";
+}
+
+function readSheetData(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+  const headers = values[0].map(h => h.toString().trim());
+  const records = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const record = {};
+    let hasValue = false;
+    for (let j = 0; j < headers.length; j++) {
+      const val = row[j];
+      record[headers[j]] = val;
+      if (val !== "") hasValue = true;
+    }
+    if (hasValue) {
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function createRecord(sheet, item) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    throw new Error("Sheet is empty and has no headers.");
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => h.toString().trim());
+  const newRow = new Array(headers.length).fill("");
+  
+  // Get template formulas from row 2 if it exists
+  let templateFormulas = [];
+  if (lastRow > 1) {
+    templateFormulas = sheet.getRange(2, 1, 1, lastCol).getFormulas()[0];
+  }
+  
+  for (let j = 0; j < headers.length; j++) {
+    const header = headers[j];
+    const formula = templateFormulas[j];
+    
+    if (formula && formula.startsWith("=")) {
+      newRow[j] = formula;
+    } else {
+      const isKeySupplied = hasKeyInItem(header, item);
+      if (isKeySupplied) {
+        newRow[j] = formatValue(getValueForHeader(header, item, null, null));
+      } else {
+        newRow[j] = "";
+      }
+    }
+  }
+  sheet.appendRow(newRow);
+  return item;
+}
+
+function updateRecord(sheet, idKey, idValue, item) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1) {
+    return createRecord(sheet, { ...item, [idKey]: idValue });
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => h.toString().trim());
+  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  
+  // Find id column dynamically using getValueForHeader logic
+  let idColIndex = -1;
+  const normIdKey = normalizeKey(idKey);
+  for (let j = 0; j < headers.length; j++) {
+    if (normalizeKey(headers[j]) === normIdKey) {
+      idColIndex = j;
+      break;
+    }
+  }
+  
+  // Fallback if no exact normalized match for idKey, try to match ID columns
+  if (idColIndex === -1) {
+    const idKeys = ["id", "userid", "staffid", "clientid", "serviceid", "expenseid", "invoiceid", "receiptid", "logid", "caseid", "taskid", "documentid", "eventid", "invoicenumber", "receiptnumber"];
+    for (let j = 0; j < headers.length; j++) {
+      if (idKeys.includes(normalizeKey(headers[j]))) {
+        idColIndex = j;
+        break;
+      }
+    }
+  }
+
+  if (idColIndex === -1) {
+    return createRecord(sheet, { ...item, [idKey]: idValue });
+  }
+  
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][idColIndex].toString().trim() === idValue.toString().trim()) {
+      const rowNum = i + 1;
+      for (let j = 0; j < headers.length; j++) {
+        const header = headers[j];
+        
+        // Read current cell's formula
+        const cell = sheet.getRange(rowNum, j + 1);
+        const formula = cell.getFormula();
+        const cellValStr = cell.getValue() ? cell.getValue().toString().trim() : "";
+        const isErrorVal = cellValStr.indexOf("ERROR") !== -1 || cellValStr.indexOf("#") === 0;
+        const isPseudoPhoneFormula = formula && (formula.indexOf("=+") === 0 || formula.indexOf("='+") === 0);
+        if (formula && formula.indexOf("=") === 0 && !isErrorVal && !isPseudoPhoneFormula) {
+          continue;
+        }
+        
+        const isKeySupplied = hasKeyInItem(header, item);
+        if (isKeySupplied) {
+          const val = getValueForHeader(header, item, idKey, idValue);
+          cell.setValue(formatValue(val));
+        }
+      }
+      return item;
+    }
+  }
+  return createRecord(sheet, { ...item, [idKey]: idValue });
+}
+
+function deleteRecord(sheet, idKey, idValue) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1) return false;
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => h.toString().trim());
+  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  
+  // Find id column dynamically using getValueForHeader logic
+  let idColIndex = -1;
+  const normIdKey = normalizeKey(idKey);
+  for (let j = 0; j < headers.length; j++) {
+    if (normalizeKey(headers[j]) === normIdKey) {
+      idColIndex = j;
+      break;
+    }
+  }
+  
+  // Fallback if no exact normalized match for idKey, try to match ID columns
+  if (idColIndex === -1) {
+    const idKeys = ["id", "userid", "staffid", "clientid", "serviceid", "expenseid", "invoiceid", "receiptid", "logid", "caseid", "taskid", "documentid", "eventid", "invoicenumber", "receiptnumber"];
+    for (let j = 0; j < headers.length; j++) {
+      if (idKeys.includes(normalizeKey(headers[j]))) {
+        idColIndex = j;
+        break;
+      }
+    }
+  }
+
+  if (idColIndex === -1) return false;
+  
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][idColIndex].toString().trim() === idValue.toString().trim()) {
+      sheet.deleteRow(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function bulkSyncRecords(sheet, idKey, items) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow === 0 || lastCol === 0) {
+    return "Sheet is empty";
+  }
+  
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => h.toString().trim());
+  
+  // Read existing formulas from row 2 to lastRow to preserve them
+  let existingFormulas = [];
+  if (lastRow > 1) {
+    existingFormulas = sheet.getRange(2, 1, lastRow - 1, lastCol).getFormulas();
+  }
+  
+  // Clear only data rows
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+  
+  if (items && items.length > 0) {
+    const rows = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const newRow = new Array(headers.length).fill("");
+      for (let j = 0; j < headers.length; j++) {
+        const header = headers[j];
+        
+        let formula = "";
+        if (existingFormulas.length > 0) {
+          const formulaRowIndex = i < existingFormulas.length ? i : 0;
+          formula = existingFormulas[formulaRowIndex][j];
+        }
+        
+        const isPseudoPhoneFormula = formula && (formula.indexOf("=+") === 0 || formula.indexOf("='+") === 0);
+        if (formula && formula.indexOf("=") === 0 && !isPseudoPhoneFormula) {
+          newRow[j] = formula;
+        } else {
+          const isKeySupplied = hasKeyInItem(header, item);
+          if (isKeySupplied) {
+            newRow[j] = formatValue(getValueForHeader(header, item, idKey, item[idKey]));
+          } else {
+            newRow[j] = "";
+          }
+        }
+      }
+      rows.push(newRow);
+    }
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  }
+  return "Successfully synced " + items.length + " records";
+}
+
+function formatValue(val) {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "object") return JSON.stringify(val);
+  return val;
+}
