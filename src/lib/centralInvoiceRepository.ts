@@ -293,4 +293,105 @@ export class CentralInvoiceRepository {
       error: "Supabase connection is unavailable. Invoice could not be saved to backend. Please retry."
     };
   }
+
+  /**
+   * Super Admin Edit/Update Invoice in Supabase PostgreSQL
+   */
+  public static async updateInvoice(
+    invoiceIdOrNumber: string,
+    payload: Partial<CreateCentralInvoicePayload> & { newInvoiceNumber?: string }
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+
+    try {
+      const updateHeader: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (payload.newInvoiceNumber) updateHeader.invoice_number = payload.newInvoiceNumber;
+      if (payload.invoiceDate) updateHeader.invoice_date = payload.invoiceDate;
+      if (payload.dueDate) updateHeader.due_date = payload.dueDate;
+      if (payload.subTotal !== undefined) updateHeader.sub_total = payload.subTotal;
+      if (payload.cgstAmount !== undefined) updateHeader.cgst_amount = payload.cgstAmount;
+      if (payload.sgstAmount !== undefined) updateHeader.sgst_amount = payload.sgstAmount;
+      if (payload.igstAmount !== undefined) updateHeader.igst_amount = payload.igstAmount;
+      if (payload.gstAmount !== undefined) updateHeader.gst_amount = payload.gstAmount;
+      if (payload.totalAmount !== undefined) {
+        updateHeader.total_amount = payload.totalAmount;
+        updateHeader.balance_due = payload.totalAmount;
+      }
+      if (payload.notes) updateHeader.notes = payload.notes;
+
+      // Match by ID or invoice_number
+      const { data: updatedHeader, error: headerErr } = await supabase
+        .from("jn_invoices")
+        .update(updateHeader)
+        .or(`id.eq.${invoiceIdOrNumber},invoice_number.eq.${invoiceIdOrNumber}`)
+        .select("id, invoice_number")
+        .single();
+
+      if (headerErr) throw headerErr;
+
+      // Update line items if provided
+      if (payload.items && payload.items.length > 0 && updatedHeader) {
+        await supabase.from("jn_invoice_items").delete().eq("invoice_id", updatedHeader.id);
+
+        const itemPayloads = payload.items.map(item => ({
+          invoice_id: updatedHeader.id,
+          service_id: item.serviceId || null,
+          service_name: item.serviceName,
+          sac_code: item.sacCode || "998311",
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          taxable_amount: item.taxableAmount,
+          gst_rate: item.gstRate,
+          gst_amount: item.gstAmount,
+          total_amount: item.totalAmount
+        }));
+
+        await supabase.from("jn_invoice_items").insert(itemPayloads);
+      }
+
+      addAuditLog(
+        "INVOICE_UPDATED",
+        "DATABASE",
+        `Updated invoice ${updatedHeader.invoice_number} in backend Supabase database`
+      );
+
+      return { success: true };
+    } catch (err: any) {
+      console.error("[CentralInvoiceRepository] updateInvoice error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Super Admin Delete/Void Invoice in Supabase PostgreSQL
+   */
+  public static async deleteInvoice(invoiceIdOrNumber: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+
+    try {
+      const { data: target } = await supabase
+        .from("jn_invoices")
+        .select("id, invoice_number")
+        .or(`id.eq.${invoiceIdOrNumber},invoice_number.eq.${invoiceIdOrNumber}`)
+        .single();
+
+      if (target) {
+        await supabase.from("jn_invoice_items").delete().eq("invoice_id", target.id);
+        await supabase.from("jn_invoices").delete().eq("id", target.id);
+
+        addAuditLog(
+          "INVOICE_DELETED",
+          "DATABASE",
+          `Permanently deleted invoice ${target.invoice_number} from Supabase database`
+        );
+      }
+      return { success: true };
+    } catch (err: any) {
+      console.error("[CentralInvoiceRepository] deleteInvoice error:", err);
+      return { success: false, error: err.message };
+    }
+  }
 }

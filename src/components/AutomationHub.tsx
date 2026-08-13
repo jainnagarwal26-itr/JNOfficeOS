@@ -17,6 +17,7 @@ import { AutomationRepository } from "../lib/automationRepository";
 import { ReminderRepository } from "../lib/reminderRepository";
 import { EventRepository } from "../lib/eventRepository";
 import { getUsers } from "../lib/db";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { WorkspaceLayout } from "./WorkspaceLayout";
 
 interface AutomationHubProps {
@@ -146,14 +147,59 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
   const [editTrigger, setEditTrigger] = useState("");
 
   // Load all repository data
-  const loadAllData = () => {
+  const loadAllData = async () => {
     try {
       setNotifications(NotificationRepository.getNotifications(currentUser));
       setRules(AutomationRepository.getRules());
       setReminders(ReminderRepository.getReminders());
       setEvents(EventRepository.getEvents());
       setLogs(AutomationRepository.getLogs());
-      setStaffUsers(getUsers());
+
+      let currentUsers = getUsers();
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: dbUsers } = await supabase
+            .from("jn_users")
+            .select("*")
+            .eq("is_active", true);
+
+          if (dbUsers && dbUsers.length > 0) {
+            const mappedUsers: User[] = dbUsers.map(u => ({
+              id: u.id,
+              email: u.email,
+              name: u.full_name,
+              role: u.role === "OWNER" || u.role === "SUPERADMIN" ? UserRole.OWNER : UserRole.STAFF,
+              passwordHash: u.password_hash || "",
+              permissions: {
+                clientCrmView: true,
+                clientCrmEdit: u.role === "OWNER",
+                serviceMasterView: true,
+                serviceMasterEdit: u.role === "OWNER",
+                invoiceView: true,
+                invoiceCreate: true,
+                invoiceVoid: u.role === "OWNER",
+                receiptView: true,
+                receiptCreate: true,
+                expenseView: true,
+                expenseCreate: true,
+                reportsView: true,
+                settingsView: true,
+                settingsEdit: u.role === "OWNER",
+                auditLogView: u.role === "OWNER",
+                userManagementView: u.role === "OWNER",
+                userManagementEdit: u.role === "OWNER"
+              },
+              status: u.is_active ? "ACTIVE" : "INACTIVE",
+              createdAt: u.created_at || new Date().toISOString(),
+              username: u.user_number || "user",
+              mobile: u.phone || "",
+              designation: u.designation || "Staff Member"
+            }));
+            currentUsers = mappedUsers;
+          }
+        } catch (e) {}
+      }
+      setStaffUsers(currentUsers);
     } catch (err) {
       console.error("Failed to sync Automation Hub caches", err);
     }

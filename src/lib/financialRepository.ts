@@ -537,7 +537,7 @@ export class FinancialRepository {
 
   public static updateInvoice(
     id: string,
-    updates: Partial<Omit<Invoice, "id" | "createdAt" | "amountInWords" | "payments">>,
+    updates: Partial<Omit<Invoice, "createdAt" | "amountInWords" | "payments">> & { customInvoiceNumber?: string },
     currentUser: User
   ): Invoice {
     this.init();
@@ -552,9 +552,14 @@ export class FinancialRepository {
     }
 
     const existing = this.invoicesCache[index];
+    const newId = (currentUser.role === UserRole.OWNER && updates.customInvoiceNumber && updates.customInvoiceNumber.trim()) 
+      ? updates.customInvoiceNumber.trim() 
+      : existing.id;
+
     const updatedInvoice = {
       ...existing,
       ...updates,
+      id: newId,
       updatedAt: new Date().toISOString()
     };
 
@@ -603,6 +608,33 @@ export class FinancialRepository {
 
     this.invoicesCache[index] = updatedInvoice;
     this.persist();
+
+    // Route central authoritative invoice update to Supabase PostgreSQL
+    import("./centralInvoiceRepository").then(({ CentralInvoiceRepository }) => {
+      CentralInvoiceRepository.updateInvoice(id, {
+        newInvoiceNumber: updatedInvoice.id,
+        clientId: updatedInvoice.clientId,
+        clientName: updatedInvoice.clientName,
+        invoiceDate: updatedInvoice.date,
+        dueDate: updatedInvoice.dueDate,
+        subTotal: updatedInvoice.subTotal,
+        cgstAmount: updatedInvoice.cgstAmount,
+        sgstAmount: updatedInvoice.sgstAmount,
+        igstAmount: updatedInvoice.igstAmount,
+        gstAmount: (updatedInvoice.cgstAmount || 0) + (updatedInvoice.sgstAmount || 0) + (updatedInvoice.igstAmount || 0),
+        totalAmount: updatedInvoice.grandTotal,
+        notes: updatedInvoice.items?.map(i => i.description).filter(Boolean).join("; ") || "",
+        items: updatedInvoice.items.map(item => ({
+          serviceName: item.serviceName,
+          quantity: item.quantity,
+          unitPrice: item.rate,
+          taxableAmount: item.taxableValue,
+          gstRate: item.gstRate,
+          gstAmount: item.cgst + item.sgst + item.igst,
+          totalAmount: item.total
+        }))
+      });
+    });
 
     // Sync to Case
     this.syncInvoiceToCase(updatedInvoice, currentUser);

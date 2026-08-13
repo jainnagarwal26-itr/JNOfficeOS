@@ -215,9 +215,11 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
   // Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [customInvoiceNumber, setCustomInvoiceNumber] = useState<string>("");
 
   const handleOpenEditInvoice = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
+    setCustomInvoiceNumber(inv.id);
     setInvoiceType(inv.type);
     setInvoiceDate(inv.date);
     setInvoiceDueDate(inv.dueDate);
@@ -366,6 +368,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
       if (editingInvoiceId) {
         FinancialRepository.updateInvoice(editingInvoiceId, {
+          customInvoiceNumber: customInvoiceNumber.trim(),
           type: invoiceType,
           caseId,
           clientId,
@@ -1679,6 +1682,22 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {currentUser.role === UserRole.OWNER && (
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-bold text-[#0D2C6C] uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span>Invoice Number / Custom Identifier (Super Admin Rights)</span>
+                      <span className="text-[9px] text-[#D4AF37] font-black bg-[#0D2C6C] px-2 py-0.5 rounded uppercase">OWNER ONLY</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customInvoiceNumber}
+                      onChange={(e) => setCustomInvoiceNumber(e.target.value)}
+                      placeholder="e.g. JNA/2026-27/000045"
+                      className="w-full px-3 py-1.5 border border-amber-300 rounded-lg text-xs font-mono font-bold text-[#0D2C6C] bg-amber-50/40 focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                     Billing Issue Date *
