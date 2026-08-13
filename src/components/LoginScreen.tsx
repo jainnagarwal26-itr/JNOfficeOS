@@ -102,6 +102,68 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
 
     try {
+      // 2. Supabase Auth Central Authentication Strategy
+      const { supabase, isSupabaseConfigured } = await import("../lib/supabase");
+      if (isSupabaseConfigured()) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password
+        });
+
+        if (!authError && authData?.session) {
+          const { authService } = await import("../lib/authService");
+          const authUser = await authService.getCurrentUser();
+          if (authUser) {
+            const mappedUser: User = {
+              id: authUser.id,
+              email: authUser.email,
+              name: authUser.fullName,
+              role: authUser.role === "OWNER" ? UserRole.OWNER : UserRole.STAFF,
+              passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash",
+              permissions: {
+                clientCrmView: true,
+                clientCrmEdit: authUser.role === "OWNER",
+                serviceMasterView: true,
+                serviceMasterEdit: authUser.role === "OWNER",
+                invoiceView: true,
+                invoiceCreate: true,
+                invoiceVoid: authUser.role === "OWNER",
+                receiptView: true,
+                receiptCreate: true,
+                expenseView: true,
+                expenseCreate: true,
+                reportsView: true,
+                settingsView: true,
+                settingsEdit: authUser.role === "OWNER",
+                auditLogView: authUser.role === "OWNER",
+                userManagementView: authUser.role === "OWNER",
+                userManagementEdit: authUser.role === "OWNER"
+              },
+              status: authUser.isActive ? "ACTIVE" : "INACTIVE",
+              createdAt: new Date().toISOString(),
+              username: authUser.userNumber || "user",
+              mobile: authUser.phone || "",
+              designation: authUser.designation || "Staff Member"
+            };
+
+            localStorage.removeItem(securityKey);
+            addAuditLog(
+              mappedUser.email,
+              mappedUser.name,
+              mappedUser.role,
+              "USER_LOGIN",
+              "AUTH",
+              `User authenticated centrally via Supabase Auth.`
+            );
+
+            setIsLoading(false);
+            onLoginSuccess(mappedUser);
+            return;
+          }
+        }
+      }
+
+      // Fallback local authentication check
       const users = getUsers();
       const userIndex = users.findIndex((u) => u.email.toLowerCase() === targetEmail || u.username.toLowerCase() === targetEmail);
 

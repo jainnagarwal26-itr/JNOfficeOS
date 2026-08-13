@@ -45,7 +45,15 @@ export class ComplianceRepository {
       
       const rawRegister: ComplianceRegisterRecord[] = JSON.parse(localStorage.getItem(STORAGE_KEY_REGISTER) || "[]");
       const validCodes = new Set(DEFAULT_COMPLIANCE_CATALOG.map(c => c.code));
-      this.registerCache = rawRegister.filter(r => validCodes.has(r.complianceCode));
+      this.registerCache = rawRegister
+        .filter(r => validCodes.has(r.complianceCode))
+        .map(r => {
+          if (r.clientId === "CL000004" || r.clientId === "9538d74a-9e34-468d-9662-ab58dfc42930" || r.clientId === "f54f4d7e-4db3-40db-bf48-989a5f8159ce" || r.clientId === "341ff4e5-62d5-42da-9d37-963d94bd6136") {
+            return { ...r, clientId: "CL000003" };
+          }
+          return r;
+        });
+      localStorage.setItem(STORAGE_KEY_REGISTER, JSON.stringify(this.registerCache));
       
       this.activitiesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_ACTIVITIES) || "[]");
       this.auditsCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AUDITS) || "[]");

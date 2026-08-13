@@ -72,15 +72,59 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
 
   const firmSettings = getSettings();
 
-  // Load latest users from storage
-  const reloadUsers = () => {
+  // Load latest users from storage and Supabase DB
+  const reloadUsers = async () => {
+    try {
+      const { supabaseService } = await import("../lib/supabaseService");
+      const res = await supabaseService.getUsersFromSupabase();
+      if (res.success && res.data && res.data.length > 0) {
+        const mappedList: User[] = res.data.map((dbUser: any) => ({
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.full_name,
+          role: dbUser.role === "OWNER" ? UserRole.OWNER : UserRole.STAFF,
+          passwordHash: dbUser.password_hash || "$2a$10$SupabaseAuthManagedIdentityHash",
+          permissions: {
+            clientCrmView: true,
+            clientCrmEdit: dbUser.role === "OWNER",
+            serviceMasterView: true,
+            serviceMasterEdit: dbUser.role === "OWNER",
+            invoiceView: true,
+            invoiceCreate: true,
+            invoiceVoid: dbUser.role === "OWNER",
+            receiptView: true,
+            receiptCreate: true,
+            expenseView: true,
+            expenseCreate: true,
+            reportsView: true,
+            settingsView: true,
+            settingsEdit: dbUser.role === "OWNER",
+            auditLogView: dbUser.role === "OWNER",
+            userManagementView: dbUser.role === "OWNER",
+            userManagementEdit: dbUser.role === "OWNER"
+          },
+          status: dbUser.is_active ? "ACTIVE" : "INACTIVE",
+          createdAt: dbUser.created_at || new Date().toISOString(),
+          username: (dbUser.user_number && dbUser.user_number.startsWith("STF")) ? dbUser.user_number : (dbUser.email === "jainnagarwal26@gmail.com" ? "STF000001" : dbUser.email === "amit@jainnagarwal.in" ? "STF000002" : dbUser.user_number || "STF000001"),
+          mobile: dbUser.phone || "",
+          designation: dbUser.designation || "Staff Member"
+        }));
+        setUsers(mappedList);
+        saveUsers(mappedList);
+        if (selectedUser) {
+          const updatedSelected = mappedList.find((u) => u.id === selectedUser.id);
+          if (updatedSelected) setSelectedUser(updatedSelected);
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn("[UserManagement] Failed loading live users from Supabase:", e);
+    }
     const list = getUsers();
     setUsers(list);
     if (selectedUser) {
       const updatedSelected = list.find((u) => u.id === selectedUser.id);
-      if (updatedSelected) {
-        setSelectedUser(updatedSelected);
-      }
+      if (updatedSelected) setSelectedUser(updatedSelected);
     }
   };
 
@@ -270,8 +314,8 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
     setSelectedUser(updatedUsers.find(u => u.id === userId) || null);
   };
 
-  // Toggle active/inactive status quickly
-  const handleToggleUserStatus = (userId: string, nextStatus: User["status"]) => {
+  // Toggle active/inactive status globally in Supabase DB
+  const handleToggleUserStatus = async (userId: string, nextStatus: User["status"]) => {
     const userToEdit = users.find(u => u.id === userId);
     if (!userToEdit) return;
 
@@ -280,13 +324,24 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
       return;
     }
 
-    const confirm = window.confirm(`Confirm Security Action:\nSet status of user "${userToEdit.name}" to ${nextStatus}?`);
+    const confirm = window.confirm(`Confirm Security Action:\nSet status of user "${userToEdit.name}" (${userToEdit.email}) to ${nextStatus}?`);
     if (!confirm) return;
+
+    const isActive = nextStatus === "ACTIVE";
+    try {
+      const { supabaseService } = await import("../lib/supabaseService");
+      const res = await supabaseService.toggleUserActiveStatus(userToEdit.email, isActive, currentUser.email);
+      if (!res.success && res.error) {
+        alert(`Failed to update status in Supabase DB: ${res.error}`);
+      }
+    } catch (e: any) {
+      console.error("[UserManagement] Status toggle exception:", e);
+    }
 
     const updatedUsers = users.map(u => {
       if (u.id === userId) {
         onAddAuditLog(
-          "USER_STATUS_TOGGLED",
+          isActive ? "STAFF_ACTIVATED" : "STAFF_DEACTIVATED",
           "SECURITY",
           `Account status of ${u.email} changed to ${nextStatus}.`
         );
@@ -298,6 +353,7 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
     setUsers(updatedUsers);
     saveUsers(updatedUsers);
     setSelectedUser(updatedUsers.find(u => u.id === userId) || null);
+    await reloadUsers();
   };
 
   // Delete User Action
@@ -377,10 +433,13 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
 
       const defaultModules = getDefaultModulePermissions(formRole === UserRole.OWNER);
 
+      const { supabaseService } = await import("../lib/supabaseService");
+      const nextStaffNumber = await supabaseService.getNextStaffNumber();
+
       const newUser: User = {
         id: `usr_${Date.now()}`,
         email: emailTrim,
-        username: usernameTrim,
+        username: nextStaffNumber, // Backend-generated STF00000X
         name: formName.trim(),
         mobile: formMobile.trim(),
         designation: formDesignation.trim(),
@@ -419,6 +478,20 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
         lastActivity: new Date().toISOString()
       };
 
+      await supabaseService.upsertUser({
+        username: nextStaffNumber,
+        userNumber: nextStaffNumber,
+        email: emailTrim,
+        passwordHash,
+        name: formName.trim(),
+        fullName: formName.trim(),
+        role: formRole,
+        mobile: formMobile.trim(),
+        department: newUser.department,
+        designation: formDesignation.trim(),
+        status: formStatus
+      });
+
       const updated = [...users, newUser];
       setUsers(updated);
       saveUsers(updated);
@@ -426,7 +499,7 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
       onAddAuditLog(
         "USER_CREATED",
         "SECURITY",
-        `Created profile ${newUser.name} (Username: ${newUser.username}, Role: ${newUser.role}).`
+        `Created profile ${newUser.name} (Staff ID: ${nextStaffNumber}, Role: ${newUser.role}).`
       );
 
       // Reset

@@ -101,9 +101,18 @@ export class SupabaseService {
       return { success: false, error: "Supabase not configured" };
     }
 
+    // Safety Guard: Block accidental upsert of obsolete CL000004 record for Parag Kadam
+    const targetClientNumber = client.clientNumber || (client.id && client.id.startsWith("CL") ? client.id : undefined);
+    if ((targetClientNumber === "CL000004" || client.id === "CL000004") && (client.name || "").includes("Parag Kadam")) {
+      console.warn("[SupabaseService] Blocked attempt to upsert obsolete CL000004 record for Parag Kadam.");
+      return { success: false, error: "CL000004 for Parag Kadam is obsolete. Canonical record is CL000003." };
+    }
+
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(client.id || "");
       const payload: any = {
-        client_number: client.id,
+        ...(isUuid ? { id: client.id } : {}),
+        client_number: targetClientNumber || client.id,
         category: client.category || "Individual",
         client_name: client.name,
         trade_name: client.tradeName || null,
@@ -152,9 +161,10 @@ export class SupabaseService {
         updated_at: new Date().toISOString()
       };
 
+      const conflictColumn = isUuid ? "id" : "client_number";
       const { data, error } = await supabase
         .from("jn_clients")
-        .upsert(payload, { onConflict: "client_number" })
+        .upsert(payload, { onConflict: conflictColumn })
         .select()
         .single();
 
@@ -270,21 +280,161 @@ export class SupabaseService {
     }
   }
 
+  // --- ATOMIC SEQUENCE & GLOBAL GOVERNANCE METHODS ---
+
+  async getNextClientNumber(): Promise<string> {
+    if (!isSupabaseConfigured()) return "CL000004";
+    try {
+      const { data, error } = await supabase.rpc("generate_next_client_number");
+      if (error || !data) {
+        const { data: clients } = await supabase.from("jn_clients").select("client_number").order("client_number", { ascending: false }).limit(1);
+        if (clients && clients.length > 0) {
+          const lastNum = parseInt(clients[0].client_number.replace(/\D/g, ""), 10) || 3;
+          return `CL${String(lastNum + 1).padStart(6, "0")}`;
+        }
+        return "CL000004";
+      }
+      return data;
+    } catch (e) {
+      console.warn("[SupabaseService] Fallback generating client number:", e);
+      return "CL000004";
+    }
+  }
+
+  async getNextStaffNumber(): Promise<string> {
+    if (!isSupabaseConfigured()) return `STF${String(Date.now()).slice(-6)}`;
+    try {
+      const { data, error } = await supabase.rpc("generate_next_staff_number");
+      if (error || !data) {
+        const { data: users } = await supabase.from("jn_users").select("user_number").order("user_number", { ascending: false }).limit(1);
+        if (users && users.length > 0) {
+          const lastNum = parseInt(users[0].user_number.replace(/\D/g, ""), 10) || 2;
+          return `STF${String(lastNum + 1).padStart(6, "0")}`;
+        }
+        return "STF000003";
+      }
+      return data;
+    } catch (e) {
+      console.warn("[SupabaseService] Fallback generating staff number:", e);
+      return `STF${String(Date.now()).slice(-6)}`;
+    }
+  }
+
+  async toggleUserActiveStatus(userEmail: string, isActive: boolean, actorUser: string = "system"): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { error } = await supabase
+        .from("jn_users")
+        .update({ is_active: isActive, updated_at: new Date().toISOString() })
+        .eq("email", userEmail.toLowerCase().trim());
+
+      if (error) throw error;
+
+      await this.logAudit({
+        userEmail: actorUser,
+        userName: actorUser,
+        role: "OWNER",
+        action: isActive ? "STAFF_ACTIVATED" : "STAFF_DEACTIVATED",
+        category: "AUTH",
+        details: `Staff member (${userEmail}) status updated to ${isActive ? "ACTIVE" : "DEACTIVATED"} centrally by ${actorUser}.`,
+        timestamp: new Date().toISOString()
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      console.error("[SupabaseService] toggleUserActiveStatus error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
   // --- USER & COMPLIANCE DATA SYNC METHODS ---
+
+  async getUsersFromSupabase(): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { data, error } = await supabase
+        .from("jn_users")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      return { success: true, data: data || [] };
+    } catch (err: any) {
+      console.error("[SupabaseService] getUsersFromSupabase error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async getProfileByEmail(email: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { data, error } = await supabase
+        .from("jn_users")
+        .select("*")
+        .eq("email", email.toLowerCase().trim())
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error;
+      return { success: true, data: data || null };
+    } catch (err: any) {
+      console.error("[SupabaseService] getProfileByEmail error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async signInWithSupabase(email: string, password: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password
+      });
+
+      if (error) throw error;
+      return { success: true, data };
+    } catch (err: any) {
+      console.error("[SupabaseService] signInWithSupabase error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async signOutFromSupabase(): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.error("[SupabaseService] signOutFromSupabase error:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  async resetPasswordInSupabase(email: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim());
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.error("[SupabaseService] resetPasswordInSupabase error:", err);
+      return { success: false, error: err.message };
+    }
+  }
 
   async upsertUser(user: any): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
     try {
       const payload = {
-        user_number: user.username || user.id,
-        email: user.email,
+        user_number: user.username || user.userNumber || user.id,
+        email: user.email.toLowerCase().trim(),
         password_hash: user.passwordHash || "$2a$10$UnusedPlaceholderHashForSSO",
-        full_name: user.name,
+        full_name: user.name || user.fullName,
         role: String(user.role).toUpperCase(),
-        phone: user.mobile || null,
+        phone: user.mobile || user.phone || null,
         department: user.department || "Taxation",
         designation: user.designation || "Managing CA & Owner",
-        is_active: user.status !== "INACTIVE",
+        is_active: user.status !== "INACTIVE" && user.isActive !== false,
         updated_at: new Date().toISOString()
       };
 
@@ -331,8 +481,6 @@ export class SupabaseService {
         compliance_code: record.complianceCode,
         compliance_name: record.complianceName,
         category: record.category,
-        sub_type: record.subType || null,
-        form_type: record.formType || null,
         fy: record.fy,
         ay: record.ay,
         period: record.period,
@@ -341,9 +489,6 @@ export class SupabaseService {
         status: record.status || "NOT_STARTED",
         ack_number: record.ackNumber || null,
         assigned_staff_id: record.assignedStaffId || null,
-        assigned_staff_name: record.assignedStaffName || null,
-        reviewed_by: record.reviewedBy || null,
-        approved_by: record.approvedBy || null,
         remarks: record.remarks || null,
         updated_at: new Date().toISOString()
       };

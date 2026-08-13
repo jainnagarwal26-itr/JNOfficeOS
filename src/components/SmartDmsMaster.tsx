@@ -142,12 +142,18 @@ ISSUE DATE: 2026-07-26`;
   };
 
   const refreshData = () => {
-    setDocuments(DocumentRepository.getDocuments());
-    setDeletedDocuments(DocumentRepository.getDeletedDocuments());
-    setClients(getClients());
-    setCases(CaseRepository.getCases(currentUser));
-    setChecklists(DocumentRepository.getChecklists());
-    setReminders(DocumentReminderRepository.getReminders());
+    try {
+      setDocuments(DocumentRepository.getDocuments() || []);
+      setDeletedDocuments(DocumentRepository.getDeletedDocuments() || []);
+      setClients(getClients() || []);
+      setCases(CaseRepository.getCases(currentUser) || []);
+      setChecklists(DocumentRepository.getChecklists() || []);
+      setReminders(DocumentReminderRepository.getReminders() || []);
+    } catch (err) {
+      console.error("[SmartDmsMaster] Failed to refresh data:", err);
+      setDocuments([]);
+      setDeletedDocuments([]);
+    }
   };
 
   const showToast = (message: string, type: "success" | "error" | "warning" = "success") => {

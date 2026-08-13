@@ -5,7 +5,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { AppNotification, NotificationType, DeliveryChannel } from "../types";
+import { AppNotification, NotificationType, DeliveryChannel, User } from "../types";
 import { EnterpriseNotification } from "../types/notification";
 
 const STORAGE_KEY = "jn_officeos_notifications";
@@ -16,7 +16,7 @@ export class NotificationRepository {
 
   private static init() {
     if (this.isInitialized) return;
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = typeof window !== "undefined" && typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
     if (stored) {
       try {
         this.notificationsCache = JSON.parse(stored);
@@ -58,17 +58,72 @@ export class NotificationRepository {
   }
 
   private static persist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.notificationsCache));
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.notificationsCache));
+    }
   }
 
-  // --- STATIC METHODS FOR AUTOMATION HUB ---
-  public static getNotifications(): AppNotification[] {
+  // --- STATIC METHODS FOR AUTOMATION HUB & DASHBOARD ---
+  public static getNotifications(currentUser?: User): AppNotification[] {
     this.init();
-    return this.notificationsCache;
+    
+    // Background sync with Supabase PostgreSQL
+    this.syncFromSupabase(currentUser).catch(() => {});
+
+    if (!currentUser) return this.notificationsCache;
+
+    const isOwner = currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN";
+    if (isOwner) {
+      return this.notificationsCache;
+    }
+
+    // STAFF User Filtering Rules:
+    // ALL_STAFF messages -> visible to all active staff.
+    // INDIVIDUAL STAFF messages -> visible ONLY to the specific targeted staff member.
+    const userId = (currentUser.id || "").trim();
+    const userNum = (currentUser.user_number || "").trim().toLowerCase();
+    const email = (currentUser.email || "").trim().toLowerCase();
+    const username = (currentUser.username || "").trim().toLowerCase();
+
+    return this.notificationsCache.filter(n => {
+      if (!n || n.isArchived) return false;
+
+      const target = (n.targetUserId || "all").trim();
+
+      // 1. Broadcast to All Staff
+      if (target === "all" || target === "ALL_STAFF" || target === "ALL" || !target) {
+        return true;
+      }
+
+      // 2. Confidential Owner Eyes Only
+      if (target === "owner") {
+        return false;
+      }
+
+      // 3. Direct Individual Staff Target (Matching Supabase UUID, User Number, Email, or Username)
+      if (
+        target === userId ||
+        (userNum && target.toLowerCase() === userNum) ||
+        (email && target.toLowerCase() === email) ||
+        (username && target.toLowerCase() === username)
+      ) {
+        return true;
+      }
+
+      // 4. Do NOT render notifications targeted to another staff member
+      return false;
+    });
   }
 
-  public static addNotification(notifInput: Omit<AppNotification, "id" | "timestamp" | "isRead" | "isArchived"> & Partial<AppNotification>): AppNotification {
+  public static addNotification(
+    notifInput: Omit<AppNotification, "id" | "timestamp" | "isRead" | "isArchived"> & Partial<AppNotification>,
+    currentUser?: User
+  ): AppNotification {
     this.init();
+
+    const targetUserId = notifInput.targetUserId || "all";
+    const isBroadcast = targetUserId === "all" || targetUserId === "ALL_STAFF" || targetUserId === "ALL";
+
     const newNotif: AppNotification = {
       id: notifInput.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: notifInput.timestamp || new Date().toISOString(),
@@ -79,23 +134,33 @@ export class NotificationRepository {
       isRead: notifInput.isRead ?? false,
       isArchived: notifInput.isArchived ?? false,
       priority: notifInput.priority || "Medium",
-      targetUserId: notifInput.targetUserId || "all",
-      metadata: notifInput.metadata
+      targetUserId: targetUserId,
+      metadata: {
+        targetType: isBroadcast ? "ALL_STAFF" : (targetUserId === "owner" ? "OWNER" : "STAFF"),
+        targetUserId: isBroadcast ? null : targetUserId,
+        broadcastedBy: currentUser?.fullName || currentUser?.name || "Owner",
+        ...(notifInput.metadata || {})
+      }
     };
 
     this.notificationsCache.unshift(newNotif);
     this.persist();
 
-    // Async Supabase Sync
+    // Async Supabase Sync to jn_notifications table
     if (isSupabaseConfigured()) {
+      // Valid UUID check for recipient_id
+      const isUuid = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+      const recipientUuid = isUuid(targetUserId) ? targetUserId : null;
+
       supabase
         .from("jn_notifications")
         .insert([{
-          recipient_id: newNotif.targetUserId,
+          recipient_id: recipientUuid,
           notification_type: newNotif.type,
           title: newNotif.title,
           message: newNotif.message,
-          is_read: newNotif.isRead
+          is_read: newNotif.isRead,
+          metadata: newNotif.metadata
         }])
         .then(({ error }) => {
           if (error) console.error("[NotificationRepository] Supabase insert error:", error);
@@ -113,15 +178,25 @@ export class NotificationRepository {
       this.persist();
 
       if (isSupabaseConfigured()) {
-        supabase
-          .from("jn_notifications")
-          .update({ is_read: true, read_at: new Date().toISOString() })
-          .eq("id", id)
-          .then(({ error }) => {
-            if (error) console.error("[NotificationRepository] Supabase update error:", error);
-          });
+        // Safe update by id if valid UUID
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (isUuid) {
+          supabase
+            .from("jn_notifications")
+            .update({ is_read: true, read_at: new Date().toISOString() })
+            .eq("id", id)
+            .then(({ error }) => {
+              if (error) console.error("[NotificationRepository] Supabase update error:", error);
+            });
+        }
       }
     }
+  }
+
+  public static markAllRead(): void {
+    this.init();
+    this.notificationsCache.forEach(n => { n.isRead = true; });
+    this.persist();
   }
 
   public static archive(id: string): void {
@@ -133,19 +208,76 @@ export class NotificationRepository {
     }
   }
 
-  // --- ASYNC INSTANCE METHODS FOR ENTERPRISE SERVICES ---
-  async fetchUserNotifications(userId: string): Promise<EnterpriseNotification[]> {
-    if (!isSupabaseConfigured()) return [];
+  public static archiveAll(): void {
+    this.init();
+    this.notificationsCache.forEach(n => { n.isArchived = true; });
+    this.persist();
+  }
 
+  private static async syncFromSupabase(currentUser?: User) {
+    if (!isSupabaseConfigured()) return;
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("jn_notifications")
         .select("*")
-        .eq("recipient_id", userId)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(50);
 
+      if (currentUser && currentUser.role === "STAFF") {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id);
+        if (isUuid) {
+          query = query.or(`recipient_id.is.null,recipient_id.eq.${currentUser.id}`);
+        }
+      }
+
+      const { data, error } = await query;
+      if (error || !data) return;
+
+      const mapped: AppNotification[] = data.map((row: any) => ({
+        id: row.id,
+        timestamp: row.created_at,
+        type: row.notification_type || "Information",
+        title: row.title,
+        message: row.message,
+        channel: row.channel || "In-App Notification",
+        isRead: row.is_read || false,
+        isArchived: false,
+        priority: "High",
+        targetUserId: row.recipient_id || "all",
+        metadata: row.metadata || {}
+      }));
+
+      // Merge Supabase PostgreSQL notifications into local cache
+      const existingIds = new Set(this.notificationsCache.map(n => n.id));
+      for (const m of mapped) {
+        if (!existingIds.has(m.id)) {
+          this.notificationsCache.unshift(m);
+        }
+      }
+      this.persist();
+    } catch (e) {
+      console.warn("[NotificationRepository] Supabase background sync failed:", e);
+    }
+  }
+
+  // --- ASYNC INSTANCE METHODS FOR ENTERPRISE SERVICES ---
+  async fetchUserNotifications(userId: string, isOwner: boolean = false): Promise<EnterpriseNotification[]> {
+    if (!isSupabaseConfigured()) return [];
+
+    try {
+      let query = supabase
+        .from("jn_notifications")
+        .select("*")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (!isOwner) {
+        query = query.or(`recipient_id.is.null,recipient_id.eq.${userId}`);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
       return (data || []).map((row: any) => ({

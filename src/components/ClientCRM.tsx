@@ -21,6 +21,8 @@ import { DeviceService } from "../lib/deviceService";
 import { LoginHistoryService } from "../lib/loginHistoryService";
 import ClientActivationWizard from "./ClientActivationWizard";
 import ClientComplianceWorkspace from "./ClientComplianceWorkspace";
+import { serviceRepository, ClientServiceAssignment, ServiceCategory, ServiceMasterItem } from "../lib/serviceRepository";
+import { supabase } from "../lib/supabase";
 
 interface ClientCRMProps {
   currentUser: User;
@@ -93,12 +95,86 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
   const allStaffUsers = getUsers().filter(u => u.status === "ACTIVE");
   const firmSettings = getSettings();
 
-  // Load clients
-  const loadLatestClients = () => {
+  // Load clients directly from Supabase RDBMS as Source of Truth
+  const loadLatestClients = async () => {
+    try {
+      const { data: dbClients, error } = await supabase
+        .from("jn_clients")
+        .select("*")
+        .order("client_number", { ascending: true });
+
+      if (!error && dbClients && dbClients.length > 0) {
+        const cleanDbClients = dbClients.filter(c => c.client_number !== "CL000004" && c.id !== "341ff4e5-62d5-42da-9d37-963d94bd6136" && c.id !== "9538d74a-9e34-468d-9662-ab58dfc42930");
+        const mapped: Client[] = cleanDbClients.map(c => ({
+          id: c.id,
+          clientNumber: c.client_number,
+          category: c.category || "Individual",
+          name: c.client_name,
+          tradeName: c.trade_name || "",
+          businessName: c.business_name || "",
+          clientSource: c.client_source || "Direct",
+          referredBy: c.referred_by || "",
+          mobile: c.mobile || "",
+          alternateMobile: c.alternate_mobile || "",
+          whatsapp: c.whatsapp || "",
+          email: c.email || "",
+          website: c.website || "",
+          pan: c.pan || "",
+          aadhaar: c.aadhaar || "",
+          gstin: c.gstin || "",
+          tan: c.tan || "",
+          udyamRegistration: c.udyam_registration || "",
+          fssaiNumber: c.fssai_number || "",
+          iecNumber: c.iec_number || "",
+          professionalTaxNumber: c.professional_tax_number || "",
+          pfNumber: c.pf_number || "",
+          esicNumber: c.esic_number || "",
+          cin: c.cin || "",
+          din: c.din || "",
+          msme: c.msme || "None",
+          officeAddress: c.office_address || "",
+          city: c.city || "",
+          state: c.state || "Maharashtra",
+          pinCode: c.pin_code || "",
+          country: c.country || "India",
+          bankName: c.bank_name || "",
+          accountHolder: c.account_holder || "",
+          accountNumber: c.account_number || "",
+          ifsc: c.ifsc || "",
+          branch: c.branch || "",
+          upi: c.upi || "",
+          businessNature: c.business_nature || "",
+          businessType: c.business_type || "Services",
+          constitution: c.constitution || "Individual",
+          dateOfIncorporation: c.date_of_incorporation || "",
+          dateOfRegistration: c.date_of_registration || "",
+          financialYear: c.financial_year || "2026-27",
+          assessmentYear: c.assessment_year || "2027-28",
+          status: c.status || "Active",
+          tags: c.tags || [],
+          documents: {},
+          assignedStaff: [],
+          timeline: [],
+          internalNotes: c.internal_notes || "",
+          createdAt: c.created_at,
+          updatedAt: c.updated_at
+        }));
+
+        setClients(mapped);
+        if (selectedClient) {
+          const refreshed = mapped.find(c => c.id === selectedClient.id || c.clientNumber === selectedClient.clientNumber);
+          if (refreshed) setSelectedClient(refreshed);
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn("[ClientCRM] Supabase fetch error, fallback to local:", err);
+    }
+
     const list = getClients();
     setClients(list);
     if (selectedClient) {
-      const refreshed = list.find(c => c.id === selectedClient.id);
+      const refreshed = list.find(c => c.id === selectedClient.id || c.clientNumber === selectedClient.clientNumber);
       if (refreshed) setSelectedClient(refreshed);
     }
   };
@@ -106,6 +182,102 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
   useEffect(() => {
     loadLatestClients();
   }, []);
+
+  // Client Services State
+  const [clientServices, setClientServices] = useState<ClientServiceAssignment[]>([]);
+  const [loadingClientServices, setLoadingClientServices] = useState(false);
+  const [showAddServiceModal, setShowAddServiceModal] = useState(false);
+  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
+  const [masterServicesList, setMasterServicesList] = useState<ServiceMasterItem[]>([]);
+  
+  // Add Service Form State
+  const [assignCatId, setAssignCatId] = useState("");
+  const [assignServiceId, setAssignServiceId] = useState("");
+  const [assignFrequency, setAssignFrequency] = useState("Monthly");
+  const [assignStaffId, setAssignStaffId] = useState("");
+  const [assignFee, setAssignFee] = useState<number>(1500);
+  const [assignStartDate, setAssignStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [assignNotes, setAssignNotes] = useState("");
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [isAssigning, setIsAssigning] = useState(false);
+
+  // Load client assigned services from Supabase
+  const loadClientServices = async (clientId: string) => {
+    setLoadingClientServices(true);
+    const services = await serviceRepository.getClientServices(clientId);
+    setClientServices(services);
+    setLoadingClientServices(false);
+  };
+
+  useEffect(() => {
+    if (selectedClient?.id) {
+      loadClientServices(selectedClient.id);
+    }
+  }, [selectedClient?.id]);
+
+  const handleOpenAddServiceModal = async () => {
+    setAssignError(null);
+    setAssignCatId("");
+    setAssignServiceId("");
+    setAssignFrequency("Monthly");
+    setAssignStaffId("");
+    setAssignFee(1500);
+    setAssignStartDate(new Date().toISOString().split("T")[0]);
+    setAssignNotes("");
+    
+    // Fetch categories and active services from Supabase
+    const cats = await serviceRepository.getCategories();
+    const srvs = await serviceRepository.getServices({ activeOnly: true });
+    setServiceCategories(cats);
+    setMasterServicesList(srvs);
+    if (cats.length > 0) setAssignCatId(cats[0].id);
+    setShowAddServiceModal(true);
+  };
+
+  const handleAssignServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient?.id || !assignServiceId) {
+      setAssignError("Please select a valid service.");
+      return;
+    }
+
+    setIsAssigning(true);
+    setAssignError(null);
+
+    const res = await serviceRepository.assignServiceToClient({
+      clientId: selectedClient.id, // Canonical jn_clients.id UUID
+      serviceId: assignServiceId, // Canonical jn_services.id UUID
+      frequency: assignFrequency,
+      assignedFee: assignFee,
+      assignedTo: assignStaffId || undefined,
+      startDate: assignStartDate,
+      notes: assignNotes,
+      actorEmail: currentUser.email,
+      actorName: currentUser.name
+    });
+
+    setIsAssigning(false);
+
+    if (res.success) {
+      setShowAddServiceModal(false);
+      await loadClientServices(selectedClient.id);
+      onAddAuditLog("CLIENT_SERVICE_ASSIGNED", "DATABASE", `Assigned service to client ${selectedClient.name} (${selectedClient.clientNumber}).`);
+    } else {
+      setAssignError(res.error || "Failed to assign service");
+    }
+  };
+
+  const handleDeactivateClientService = async (assignmentId: string) => {
+    if (!window.confirm("Are you sure you want to deactivate this service for the client? Historical records will be preserved.")) return;
+
+    const res = await serviceRepository.deactivateClientService(assignmentId, currentUser.email, currentUser.name);
+    if (res.success && selectedClient?.id) {
+      await loadClientServices(selectedClient.id);
+      onAddAuditLog("CLIENT_SERVICE_DEACTIVATED", "DATABASE", `Deactivated client service assignment ID ${assignmentId}.`);
+    } else {
+      alert(res.error || "Failed to deactivate client service");
+    }
+  };
 
   // Filter clients based on search, filters and staff assignment
   const filteredClients = clients.filter(c => {
@@ -832,7 +1004,7 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
                         selectedClient?.id === c.id ? "bg-amber-50/50 font-medium" : ""
                       }`}
                     >
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 font-semibold">{c.id}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 font-semibold">{c.clientNumber || c.id}</td>
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-[#0D2C6C]">{c.name}</div>
                         {c.tradeName && <div className="text-[10px] text-slate-400 italic">Trade: {c.tradeName}</div>}
@@ -912,7 +1084,7 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono font-bold text-[#D4AF37] tracking-wider uppercase bg-[#0D2C6C]/10 px-2 py-0.5 rounded">
-                    Client ID: {selectedClient.id}
+                    Client ID: {selectedClient.clientNumber || selectedClient.id}
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
                     selectedClient.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
@@ -1045,6 +1217,82 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
                         {t}
                       </span>
                     ))}
+                  </div>
+
+                  {/* ACTIVE SERVICES SECTION (Supabase jn_client_services) */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-extrabold text-[#0D2C6C] uppercase tracking-wider flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-[#D4AF37]" />
+                          Active Client Engagements & Services
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Centrally managed billing and compliance service assignments (Supabase PostgreSQL)
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={handleOpenAddServiceModal}
+                        className="px-3 py-1.5 bg-[#0D2C6C] hover:bg-[#0D2C6C]/90 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        + Add Service
+                      </button>
+                    </div>
+
+                    {loadingClientServices ? (
+                      <div className="p-4 text-center text-xs text-slate-400">Loading active services...</div>
+                    ) : clientServices.filter(s => s.status === "ACTIVE").length === 0 ? (
+                      <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl text-center text-xs text-slate-500">
+                        No active service engagements assigned to this client yet. Click <span className="font-bold text-[#0D2C6C]">+ Add Service</span> to assign a service from the Master Catalog.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {clientServices.filter(s => s.status === "ACTIVE").map(cs => (
+                          <div key={cs.id} className="p-3.5 bg-gradient-to-br from-slate-50 to-blue-50/20 border border-slate-200/80 rounded-xl space-y-2 text-xs">
+                            <div className="flex justify-between items-start gap-2">
+                              <div>
+                                <span className="font-bold text-[#0D2C6C] text-xs block">{cs.serviceName}</span>
+                                <span className="text-[10px] text-slate-400 font-mono">{cs.serviceNumber} • {cs.categoryName}</span>
+                              </div>
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full shrink-0">
+                                ACTIVE
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/50">
+                              <div>
+                                <span className="text-slate-400 block text-[10px]">Frequency:</span>
+                                <span className="font-medium text-slate-700">{cs.frequency}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[10px]">Assigned Fee:</span>
+                                <span className="font-bold font-mono text-[#0D2C6C]">₹{cs.assignedFee.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[10px]">Assigned Staff:</span>
+                                <span className="font-medium text-slate-700">{cs.assignedToName || "Unassigned"}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-[#0D2C6C] block text-[10px]">Start Date:</span>
+                                <span className="font-mono text-slate-600">{cs.startDate || "N/A"}</span>
+                              </div>
+                            </div>
+
+                            <div className="pt-2 flex justify-end">
+                              <button
+                                onClick={() => handleDeactivateClientService(cs.id)}
+                                className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline font-semibold flex items-center gap-1"
+                              >
+                                <XCircle className="w-3 h-3" />
+                                Deactivate
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Owner-Only Notes Alert Card */}
@@ -2551,6 +2799,166 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
           />
         </div>
       )}
+      {/* ADD SERVICE TO CLIENT MODAL */}
+      <Modal id="add-service-to-client-modal" isOpen={showAddServiceModal} onClose={() => setShowAddServiceModal(false)}>
+        <ModalHeader title={`Assign Service to ${selectedClient?.name}`} onClose={() => setShowAddServiceModal(false)} />
+        <form onSubmit={handleAssignServiceSubmit}>
+          <ModalBody className="space-y-4 text-xs">
+            {assignError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+                {assignError}
+              </div>
+            )}
+
+            {/* STEP 1: Select Category */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                STEP 1: Select Category
+              </label>
+              <select
+                value={assignCatId}
+                onChange={(e) => {
+                  setAssignCatId(e.target.value);
+                  setAssignServiceId("");
+                }}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+              >
+                <option value="">-- Choose Category --</option>
+                {serviceCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.categoryName}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* STEP 2: Select Service */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                STEP 2: Select Service (Active Services Only)
+              </label>
+              <select
+                value={assignServiceId}
+                onChange={(e) => {
+                  const sId = e.target.value;
+                  setAssignServiceId(sId);
+                  const selectedSrv = masterServicesList.find(s => s.id === sId);
+                  if (selectedSrv) {
+                    setAssignFee(selectedSrv.standardFee);
+                  }
+                }}
+                disabled={!assignCatId}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:outline-none focus:border-[#0D2C6C] disabled:bg-slate-100"
+              >
+                <option value="">-- Choose Service --</option>
+                {masterServicesList
+                  .filter(s => !assignCatId || s.categoryId === assignCatId)
+                  .map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.serviceNumber} - {s.serviceName} (Standard Fee: ₹{s.standardFee})
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* STEP 3: Frequency */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  STEP 3: Service Frequency
+                </label>
+                <select
+                  value={assignFrequency}
+                  onChange={(e) => setAssignFrequency(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                >
+                  <option value="Monthly">Monthly</option>
+                  <option value="Quarterly">Quarterly</option>
+                  <option value="Half-Yearly">Half-Yearly</option>
+                  <option value="Annual">Annual</option>
+                  <option value="One-Time">One-Time</option>
+                  <option value="As Applicable">As Applicable</option>
+                </select>
+              </div>
+
+              {/* STEP 4: Assigned Staff */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  STEP 4: Assigned Operator / Staff
+                </label>
+                <select
+                  value={assignStaffId}
+                  onChange={(e) => setAssignStaffId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                >
+                  <option value="">-- Unassigned (Default) --</option>
+                  {allStaffUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* STEP 5: Assigned Fee */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  STEP 5: Assigned Fee (INR)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={assignFee}
+                  onChange={(e) => setAssignFee(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-mono font-bold text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                />
+              </div>
+
+              {/* STEP 6: Start Date */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  STEP 6: Service Start Date
+                </label>
+                <input
+                  type="date"
+                  value={assignStartDate}
+                  onChange={(e) => setAssignStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                />
+              </div>
+            </div>
+
+            {/* STEP 7: Notes */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                STEP 7: Specific Engagement Notes
+              </label>
+              <textarea
+                value={assignNotes}
+                onChange={(e) => setAssignNotes(e.target.value)}
+                placeholder="Specific billing instructions, scope conditions, special waivers..."
+                rows={2}
+                className="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+              />
+            </div>
+          </ModalBody>
+
+          <ModalFooter>
+            <button
+              type="button"
+              onClick={() => setShowAddServiceModal(false)}
+              className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isAssigning}
+              className="px-5 py-2 bg-[#0D2C6C] hover:bg-[#071D4A] text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-blue-900/10 disabled:opacity-50"
+            >
+              {isAssigning ? "Assigning..." : "Assign Service"}
+            </button>
+          </ModalFooter>
+        </form>
+      </Modal>
     </div>
   );
 }

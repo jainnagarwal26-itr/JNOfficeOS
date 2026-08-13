@@ -62,6 +62,9 @@ export default function App() {
       const loadedSettings = getSettings();
       setSettings(loadedSettings);
 
+      let sessionEmail: string | null = null;
+      let remainingSeconds = loadedSettings.sessionTimeoutMinutes * 60;
+
       // Trigger safe non-destructive migration sync to Supabase PostgreSQL
       runAutomatedDataMigration().then((res) => {
         console.log("[JN OfficeOS Migration Engine] Sync Status:", res);
@@ -69,49 +72,97 @@ export default function App() {
         console.error("[JN OfficeOS Migration Engine] Sync Exception:", e);
       });
 
-      // Secure Session Restoration (survives page refresh if active session is still valid)
-      const activeSessionRaw = localStorage.getItem("jn_officeos_active_session");
-      const rememberedEmail = localStorage.getItem("jn_officeos_remember_session");
-
-      let sessionEmail: string | null = null;
-      let remainingSeconds = loadedSettings.sessionTimeoutMinutes * 60;
-
-      if (activeSessionRaw) {
-        try {
-          const sessionObj = JSON.parse(activeSessionRaw);
-          if (sessionObj.email && sessionObj.expiresAt) {
-            const diff = Math.floor((sessionObj.expiresAt - Date.now()) / 1000);
-            if (diff > 0) {
-              sessionEmail = sessionObj.email;
-              remainingSeconds = diff;
+      // Official Supabase Auth Session Restoration (Survives page refresh & new tabs)
+      try {
+        const { supabase, isSupabaseConfigured } = await import("./lib/supabase");
+        if (isSupabaseConfigured()) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { authService } = await import("./lib/authService");
+            const authUser = await authService.getCurrentUser();
+            if (authUser) {
+              const mappedUser: User = {
+                id: authUser.id,
+                email: authUser.email,
+                name: authUser.fullName,
+                role: authUser.role === "OWNER" ? UserRole.OWNER : UserRole.STAFF,
+                passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash",
+                permissions: {
+                  clientCrmView: true,
+                  clientCrmEdit: authUser.role === "OWNER",
+                  serviceMasterView: true,
+                  serviceMasterEdit: authUser.role === "OWNER",
+                  invoiceView: true,
+                  invoiceCreate: true,
+                  invoiceVoid: authUser.role === "OWNER",
+                  receiptView: true,
+                  receiptCreate: true,
+                  expenseView: true,
+                  expenseCreate: true,
+                  reportsView: true,
+                  settingsView: true,
+                  settingsEdit: authUser.role === "OWNER",
+                  auditLogView: authUser.role === "OWNER",
+                  userManagementView: authUser.role === "OWNER",
+                  userManagementEdit: authUser.role === "OWNER"
+                },
+                status: authUser.isActive ? "ACTIVE" : "INACTIVE",
+                createdAt: new Date().toISOString(),
+                username: authUser.userNumber || "user",
+                mobile: authUser.phone || "",
+                designation: authUser.designation || "Staff Member"
+              };
+              setCurrentUser(mappedUser);
+              sessionEmail = authUser.email;
+              remainingSeconds = loadedSettings.sessionTimeoutMinutes * 60;
             }
           }
-        } catch (e) {
-          console.error("Failed parsing active session token:", e);
         }
+      } catch (authErr) {
+        console.error("[App] Supabase Auth session restoration error:", authErr);
       }
 
-      // Fallback to Remember Me if no active session found but remember email exists
-      if (!sessionEmail && rememberedEmail) {
-        sessionEmail = rememberedEmail;
-        remainingSeconds = loadedSettings.sessionTimeoutMinutes * 60;
-      }
+      // Secure Session Restoration Fallback
+      if (!sessionEmail) {
+        const activeSessionRaw = localStorage.getItem("jn_officeos_active_session");
+        const rememberedEmail = localStorage.getItem("jn_officeos_remember_session");
 
-      if (sessionEmail) {
-        const matchingUser = getUsers().find(
-          (u) => (u.email || "").toLowerCase() === sessionEmail!.toLowerCase() && u.status === "ACTIVE"
-        );
-        if (matchingUser) {
-          setCurrentUser(matchingUser);
-          setSessionCountdown(remainingSeconds);
-          addAuditLog(
-            matchingUser.email,
-            matchingUser.name,
-            matchingUser.role,
-            "SESSION_RESTORED",
-            "AUTH",
-            "Active session successfully restored on user device via persistent authentication keys."
+        if (activeSessionRaw) {
+          try {
+            const sessionObj = JSON.parse(activeSessionRaw);
+            if (sessionObj.email && sessionObj.expiresAt) {
+              const diff = Math.floor((sessionObj.expiresAt - Date.now()) / 1000);
+              if (diff > 0) {
+                sessionEmail = sessionObj.email;
+                remainingSeconds = diff;
+              }
+            }
+          } catch (e) {
+            console.error("Failed parsing active session token:", e);
+          }
+        }
+
+        if (!sessionEmail && rememberedEmail) {
+          sessionEmail = rememberedEmail;
+          remainingSeconds = loadedSettings.sessionTimeoutMinutes * 60;
+        }
+
+        if (sessionEmail && !currentUser) {
+          const matchingUser = getUsers().find(
+            (u) => (u.email || "").toLowerCase() === sessionEmail!.toLowerCase() && u.status === "ACTIVE"
           );
+          if (matchingUser) {
+            setCurrentUser(matchingUser);
+            setSessionCountdown(remainingSeconds);
+            addAuditLog(
+              matchingUser.email,
+              matchingUser.name,
+              matchingUser.role,
+              "SESSION_RESTORED",
+              "AUTH",
+              "Active session successfully restored on user device via persistent authentication keys."
+            );
+          }
         }
       }
 
@@ -187,10 +238,18 @@ export default function App() {
     setActiveView("dashboard");
   };
 
-  const handleLogout = (reason: "MANUAL" | "SESSION_TIMEOUT") => {
+  const handleLogout = async (reason: "MANUAL" | "SESSION_TIMEOUT") => {
     if (!currentUser) return;
 
-    // Clear session states on logout
+    // Clear Supabase Auth Session
+    try {
+      const { authService } = await import("./lib/authService");
+      await authService.signOut();
+    } catch (e) {
+      console.error("[App] Supabase Auth signOut error:", e);
+    }
+
+    // Clear local session states on logout
     localStorage.removeItem("jn_officeos_active_session");
     if (reason === "MANUAL") {
       localStorage.removeItem("jn_officeos_remember_session");

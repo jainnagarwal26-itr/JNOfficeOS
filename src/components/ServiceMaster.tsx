@@ -16,6 +16,7 @@ import { User, UserRole, Service, ServiceRule, ServiceStatus, ServicePeriod, Ser
 import { getServices, saveServices, getNextServiceId, getClients, getSettings } from "../lib/db";
 import { hasPermission } from "../lib/permissions";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ModalFramework";
+import { serviceRepository } from "../lib/serviceRepository";
 
 // Helper to compute standard Financial and Assessment Year
 export function calculateFYandAY(dateStr?: string) {
@@ -433,38 +434,62 @@ export default function ServiceMaster({ currentUser, onAddAuditLog }: ServiceMas
     );
   }
 
-  // Load or Seed services
+  // Load services from live Supabase Service Master
   useEffect(() => {
-    const localSrvs = getServices();
-    if (localSrvs.length > 0) {
-      setServices(localSrvs.sort((a, b) => a.orderIndex - b.orderIndex));
-      if (localSrvs.length > 0 && !sandboxSelectedServiceCode) {
-        setSandboxSelectedServiceCode(localSrvs[0].code);
+    const fetchSupabaseServices = async () => {
+      const dbServices = await serviceRepository.getServices();
+      if (dbServices.length > 0) {
+        const mappedServices: Service[] = dbServices.map((s, idx) => ({
+          id: s.id,
+          name: s.serviceName,
+          category: s.categoryName,
+          code: s.serviceNumber,
+          description: s.description,
+          governmentForm: s.sacCode ? `SAC ${s.sacCode}` : "",
+          department: s.categoryName,
+          period: "Monthly" as ServicePeriod,
+          status: s.isActive ? "Active" : "Inactive",
+          applicableTo: ["Individual", "Proprietorship", "Partnership", "LLP", "Private Limited"],
+          isNew: true,
+          isUpdate: true,
+          isRenewal: false,
+          isCorrection: false,
+          isCancellation: false,
+          isDuplicate: false,
+          isMigration: false,
+          isRevision: false,
+          rules: {
+            financialYearRequired: true,
+            assessmentYearRequired: false,
+            monthRequired: true,
+            quarterRequired: false,
+            governmentFormRequired: false,
+            registrationNumberRequired: false,
+            expiryDateRequired: false,
+            renewalRequired: false,
+            documentRequired: true,
+            amountRequired: true,
+            dueDateRequired: true
+          },
+          orderIndex: idx,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          history: []
+        }));
+        setServices(mappedServices);
+        saveServices(mappedServices); // Local UI Cache
+        if (mappedServices.length > 0 && !sandboxSelectedServiceCode) {
+          setSandboxSelectedServiceCode(mappedServices[0].code);
+        }
+      } else {
+        const localSrvs = getServices();
+        if (localSrvs.length > 0) {
+          setServices(localSrvs);
+        }
       }
-    } else {
-      // Seed default databases
-      const seeded: Service[] = SEED_SERVICES.map((s, idx) => ({
-        ...s,
-        id: `SRV${(idx + 1).toString().padStart(5, "0")}`,
-        orderIndex: idx,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        history: [{
-          id: `hist_seed_${idx}`,
-          timestamp: new Date().toISOString(),
-          action: "CREATED",
-          details: "System seeded default regulatory and compliance service profile automatically.",
-          userEmail: "system",
-          userName: "System Core"
-        }]
-      }));
-      saveServices(seeded);
-      setServices(seeded);
-      if (seeded.length > 0) {
-        setSandboxSelectedServiceCode(seeded[0].code);
-      }
-      onAddAuditLog("DATABASE_INITIALIZED", "DATABASE", `Seeded ${seeded.length} master services and rule definitions automatically.`);
-    }
+    };
+
+    fetchSupabaseServices();
   }, []);
 
   const resetFormFields = () => {
@@ -545,137 +570,141 @@ export default function ServiceMaster({ currentUser, onAddAuditLog }: ServiceMas
     setShowFormModal(true);
   };
 
-  const handleSaveService = (e: React.FormEvent) => {
+  const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim() || !formCode.trim()) return;
+    if (!formName.trim()) return;
 
-    // Check code duplication
-    const duplicate = services.find(s => s.code.toLowerCase() === formCode.toLowerCase() && (!editingService || isCloning || s.id !== editingService.id));
-    if (duplicate) {
-      alert(`Service Master code '${formCode}' is already registered for '${duplicate.name}'. Service codes must be strictly unique.`);
-      return;
-    }
-
-    const rulesObject: ServiceRule = {
-      financialYearRequired: ruleFY,
-      assessmentYearRequired: ruleAY,
-      monthRequired: ruleMonth,
-      quarterRequired: ruleQuarter,
-      governmentFormRequired: ruleGovForm,
-      registrationNumberRequired: ruleRegNo,
-      expiryDateRequired: ruleExpiry,
-      renewalRequired: ruleRenewal,
-      documentRequired: ruleDoc,
-      amountRequired: ruleAmount,
-      dueDateRequired: ruleDueDate
-    };
-
-    const auditTrail: ServiceHistory = {
-      id: `hist_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      action: isCloning ? "CLONED" : (editingService ? "MODIFIED" : "CREATED"),
-      details: isCloning 
-        ? `Cloned from master service record '${editingService?.name}' (${editingService?.code}).`
-        : (editingService ? `Modified service definitions, applicability rules, and core parameters.` : "Created fresh dynamic service profile and configured rule engine properties."),
-      userEmail: currentUser.email,
-      userName: currentUser.name
-    };
-
-    let updatedList: Service[] = [];
     if (editingService && !isCloning) {
-      // Edit
-      updatedList = services.map(s => {
-        if (s.id === editingService.id) {
-          return {
-            ...s,
-            name: formName,
-            category: formCategory,
-            code: formCode,
-            description: formDescription,
-            governmentForm: formGovForm,
-            department: formDepartment,
-            period: formPeriod,
-            status: formStatus,
-            applicableTo: formApplicableTo,
-            isNew: actNew,
-            isUpdate: actUpdate,
-            isRenewal: actRenewal,
-            isCorrection: actCorrection,
-            isCancellation: actCancellation,
-            isDuplicate: actDuplicate,
-            isMigration: actMigration,
-            isRevision: actRevision,
-            rules: rulesObject,
-            history: [auditTrail, ...s.history],
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return s;
+      // Edit existing service in Supabase
+      await serviceRepository.updateService(editingService.id, {
+        serviceName: formName,
+        description: formDescription,
+        actorEmail: currentUser.email,
+        actorName: currentUser.name
       });
       onAddAuditLog("SERVICE_MODIFIED", "DATABASE", `Modified Master Service configuration for '${formName}' [${formCode}].`);
     } else {
-      // Create or Clone
-      const newSrv: Service = {
-        id: isCloning ? getNextServiceId() : (editingService?.id || `SRV${(services.length + 1).toString().padStart(5, "0")}`),
-        name: formName,
-        category: formCategory,
-        code: formCode,
+      // Create new service in Supabase (PostgreSQL sequence generates SRV00030...)
+      const categories = await serviceRepository.getCategories();
+      const matchedCat = categories.find(c => c.categoryName === formCategory) || categories[0];
+      const categoryId = matchedCat ? matchedCat.id : "c4794e5a-2fb2-47ef-b4b9-3e3a936a0d01";
+
+      const res = await serviceRepository.createService({
+        serviceName: formName,
+        categoryId: categoryId,
+        categoryName: formCategory,
+        standardFee: 1500,
+        sacCode: "998311",
+        gstRate: 18,
         description: formDescription,
-        governmentForm: formGovForm,
-        department: formDepartment,
-        period: formPeriod,
-        status: formStatus,
-        applicableTo: formApplicableTo,
-        isNew: actNew,
-        isUpdate: actUpdate,
-        isRenewal: actRenewal,
-        isCorrection: actCorrection,
-        isCancellation: actCancellation,
-        isDuplicate: actDuplicate,
-        isMigration: actMigration,
-        isRevision: actRevision,
-        rules: rulesObject,
-        orderIndex: services.length,
-        history: [auditTrail],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      updatedList = [...services, newSrv];
-      onAddAuditLog(isCloning ? "SERVICE_CLONED" : "SERVICE_CREATED", "DATABASE", `Registered new Service catalog entry for '${formName}' [${formCode}].`);
+        actorEmail: currentUser.email,
+        actorName: currentUser.name
+      });
+
+      if (!res.success) {
+        alert(res.error || "Failed to create service");
+        return;
+      }
+      onAddAuditLog("SERVICE_CREATED", "DATABASE", `Created new Master Service '${formName}' under '${formCategory}'.`);
     }
 
-    saveServices(updatedList);
-    setServices(updatedList.sort((a, b) => a.orderIndex - b.orderIndex));
+    // Refresh live services from Supabase
+    const dbServices = await serviceRepository.getServices();
+    const mappedServices: Service[] = dbServices.map((s, idx) => ({
+      id: s.id,
+      name: s.serviceName,
+      category: s.categoryName,
+      code: s.serviceNumber,
+      description: s.description,
+      governmentForm: s.sacCode ? `SAC ${s.sacCode}` : "",
+      department: s.categoryName,
+      period: "Monthly" as ServicePeriod,
+      status: s.isActive ? "Active" : "Inactive",
+      applicableTo: ["Individual", "Proprietorship", "Partnership", "LLP", "Private Limited"],
+      isNew: true,
+      isUpdate: true,
+      isRenewal: false,
+      isCorrection: false,
+      isCancellation: false,
+      isDuplicate: false,
+      isMigration: false,
+      isRevision: false,
+      rules: {
+        financialYearRequired: true,
+        assessmentYearRequired: false,
+        monthRequired: true,
+        quarterRequired: false,
+        governmentFormRequired: false,
+        registrationNumberRequired: false,
+        expiryDateRequired: false,
+        renewalRequired: false,
+        documentRequired: true,
+        amountRequired: true,
+        dueDateRequired: true
+      },
+      orderIndex: idx,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      history: []
+    }));
+    setServices(mappedServices);
+    saveServices(mappedServices);
+
     setShowFormModal(false);
     resetFormFields();
   };
 
-  const handleToggleServiceStatus = (srv: Service) => {
+  const handleToggleServiceStatus = async (srv: Service) => {
     if (!canModify) return;
-    const nextStatus: ServiceStatus = srv.status === "Active" ? "Inactive" : "Active";
-    
-    const updated = services.map(s => {
-      if (s.id === srv.id) {
-        return {
-          ...s,
-          status: nextStatus,
-          history: [{
-            id: `hist_status_${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            action: "DISABLED",
-            details: `Administrative status toggled to '${nextStatus}'.`,
-            userEmail: currentUser.email,
-            userName: currentUser.name
-          } as ServiceHistory, ...s.history],
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return s;
-    });
+    const isCurrentlyActive = srv.status === "Active";
 
-    saveServices(updated);
-    setServices(updated.sort((a, b) => a.orderIndex - b.orderIndex));
-    onAddAuditLog("SERVICE_STATUS_TOGGLED", "DATABASE", `Changed administrative state of '${srv.name}' [${srv.code}] to ${nextStatus}.`);
+    if (isCurrentlyActive) {
+      await serviceRepository.deactivateService(srv.id, currentUser.email, currentUser.name);
+    } else {
+      await serviceRepository.reactivateService(srv.id, currentUser.email, currentUser.name);
+    }
+
+    const dbServices = await serviceRepository.getServices();
+    const mappedServices: Service[] = dbServices.map((s, idx) => ({
+      id: s.id,
+      name: s.serviceName,
+      category: s.categoryName,
+      code: s.serviceNumber,
+      description: s.description,
+      governmentForm: s.sacCode ? `SAC ${s.sacCode}` : "",
+      department: s.categoryName,
+      period: "Monthly" as ServicePeriod,
+      status: s.isActive ? "Active" : "Inactive",
+      applicableTo: ["Individual", "Proprietorship", "Partnership", "LLP", "Private Limited"],
+      isNew: true,
+      isUpdate: true,
+      isRenewal: false,
+      isCorrection: false,
+      isCancellation: false,
+      isDuplicate: false,
+      isMigration: false,
+      isRevision: false,
+      rules: {
+        financialYearRequired: true,
+        assessmentYearRequired: false,
+        monthRequired: true,
+        quarterRequired: false,
+        governmentFormRequired: false,
+        registrationNumberRequired: false,
+        expiryDateRequired: false,
+        renewalRequired: false,
+        documentRequired: true,
+        amountRequired: true,
+        dueDateRequired: true
+      },
+      orderIndex: idx,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      history: []
+    }));
+    setServices(mappedServices);
+    saveServices(mappedServices);
+    onAddAuditLog(isCurrentlyActive ? "SERVICE_DEACTIVATED" : "SERVICE_REACTIVATED", "DATABASE", `Toggled Master Service status for '${srv.name}' [${srv.code}] to ${isCurrentlyActive ? 'Inactive' : 'Active'}.`);
   };
 
   const handleArchiveService = (srv: Service) => {

@@ -70,8 +70,11 @@ export class ClientRepository {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
 
     try {
+      const { supabaseService } = await import("./supabaseService");
+      const clientNumber = profile.clientNumber || await supabaseService.getNextClientNumber();
+
       const payload: any = {
-        client_number: profile.clientNumber,
+        client_number: clientNumber,
         category: profile.category,
         client_name: profile.clientName,
         trade_name: profile.tradeName || null,

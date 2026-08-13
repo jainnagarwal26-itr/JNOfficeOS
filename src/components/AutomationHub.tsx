@@ -148,7 +148,7 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
   // Load all repository data
   const loadAllData = () => {
     try {
-      setNotifications(NotificationRepository.getNotifications());
+      setNotifications(NotificationRepository.getNotifications(currentUser));
       setRules(AutomationRepository.getRules());
       setReminders(ReminderRepository.getReminders());
       setEvents(EventRepository.getEvents());
@@ -203,8 +203,8 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
         channel: "In-App Notification",
         priority: "High",
         targetUserId: broadcastTarget,
-        metadata: { isPinned: broadcastPin, broadcastedBy: currentUser?.name || "Owner" }
-      });
+        metadata: { isPinned: broadcastPin, broadcastedBy: currentUser?.fullName || currentUser?.name || "Owner" }
+      }, currentUser);
 
       // Reset
       setBroadcastTitle("");
@@ -345,6 +345,27 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
   // Filtered Notifications
   const filteredNotifications = (notifications || []).filter(notif => {
     if (!notif || notif.isArchived) return false;
+
+    // Audience targeting filter
+    const isOwner = currentUser?.role === "OWNER" || currentUser?.role === "SUPERADMIN";
+    if (!isOwner) {
+      const target = (notif.targetUserId || "all").trim();
+      const isBroadcast = target === "all" || target === "ALL_STAFF" || target === "ALL" || !target;
+      const userId = (currentUser?.id || "").trim();
+      const userNum = (currentUser?.user_number || "").trim().toLowerCase();
+      const email = (currentUser?.email || "").trim().toLowerCase();
+      const username = (currentUser?.username || "").trim().toLowerCase();
+
+      const isDirectTarget = 
+        target === userId || 
+        (userNum && target.toLowerCase() === userNum) || 
+        (email && target.toLowerCase() === email) || 
+        (username && target.toLowerCase() === username);
+
+      if (!isBroadcast && !isDirectTarget) {
+        return false;
+      }
+    }
 
     // Search filter
     const titleStr = String(notif.title || "").toLowerCase();
@@ -578,6 +599,30 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
                             <span className="text-[9px] bg-slate-100 text-slate-500 font-semibold px-1.5 py-0.2 rounded font-sans border border-slate-200/50">
                               {notif.channel}
                             </span>
+                            {(() => {
+                              const target = notif.targetUserId;
+                              if (!target || target === "all" || target === "ALL_STAFF") {
+                                return (
+                                  <span className="text-[9px] bg-blue-50 text-blue-700 font-semibold px-1.5 py-0.2 rounded font-sans border border-blue-200/60 flex items-center gap-1">
+                                    🌐 All Staff
+                                  </span>
+                                );
+                              } else if (target === "owner") {
+                                return (
+                                  <span className="text-[9px] bg-amber-50 text-amber-700 font-semibold px-1.5 py-0.2 rounded font-sans border border-amber-200/60 flex items-center gap-1">
+                                    🔒 Owner Only
+                                  </span>
+                                );
+                              } else {
+                                const targetUser = staffUsers.find(u => u.id === target || u.user_number === target || u.email === target);
+                                const targetName = targetUser ? (targetUser.fullName || targetUser.name) : target;
+                                return (
+                                  <span className="text-[9px] bg-purple-50 text-purple-700 font-semibold px-1.5 py-0.2 rounded font-sans border border-purple-200/60 flex items-center gap-1">
+                                    👤 Target: {targetName}
+                                  </span>
+                                );
+                              }
+                            })()}
                           </div>
 
                           <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">

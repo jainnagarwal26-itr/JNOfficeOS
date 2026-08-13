@@ -117,7 +117,7 @@ const DEFAULT_INITIAL_CASES: Case[] = [
   },
   {
     id: "CASE-2026-0003",
-    clientId: "CL000004",
+    clientId: "CL000003",
     clientName: "Parag Kadam",
     serviceId: "SRV_AUDIT_003",
     serviceName: "Tax Audit Report (Form 3CD & 3CB)",

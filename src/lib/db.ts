@@ -165,7 +165,7 @@ export async function initializeDatabase(): Promise<void> {
       email: "jainnagarwal26@gmail.com",
       name: "Chirag Jain",
       role: UserRole.OWNER,
-      passwordHash: "", // No default password! Must be created on first login.
+      passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash", // Central Supabase Auth Managed Identity
       permissions: {
         ...DEFAULT_PERMISSIONS,
         settingsView: true,
@@ -230,7 +230,7 @@ export async function initializeDatabase(): Promise<void> {
   localStorage.setItem(STORAGE_KEYS.INITIALIZED, "true");
 }
 
-// Services DB Actions
+// Services DB Actions (Supabase-backed with local UI cache)
 export function getServices(): Service[] {
   const data = localStorage.getItem(STORAGE_KEYS.SERVICES);
   if (!data) return [];
@@ -268,25 +268,24 @@ export function saveServices(services: Service[]): void {
 }
 
 export function getNextServiceId(): string {
-  const counterStr = localStorage.getItem(STORAGE_KEYS.SERVICES_ID_COUNTER);
-  let nextId = 1;
-  if (counterStr) {
-    nextId = parseInt(counterStr, 10) + 1;
-  } else {
-    const srvs = getServices();
-    if (srvs.length > 0) {
-      const ids = srvs.map(s => parseInt(s.id.replace("SRV", ""), 10));
+  const srvs = getServices();
+  let nextId = 30;
+  if (srvs.length > 0) {
+    const ids = srvs
+      .map(s => parseInt((s.code || s.serviceNumber || s.id || "").replace(/\D/g, ""), 10))
+      .filter(n => !isNaN(n) && n < 100000);
+    if (ids.length > 0) {
       nextId = Math.max(...ids) + 1;
     }
   }
-  localStorage.setItem(STORAGE_KEYS.SERVICES_ID_COUNTER, nextId.toString());
   return `SRV${nextId.toString().padStart(5, "0")}`;
 }
 
 // Default Seed Clients for initial fallback preservation
 const DEFAULT_CLIENTS: Client[] = [
   {
-    id: "CL000001",
+    id: "c6528254-ba9c-428b-b488-78eea7589f83",
+    clientNumber: "CL000001",
     category: "Individual",
     name: "Anchal Baleshwar Chobe",
     tradeName: "Anchal Baleshwar Chobe",
@@ -339,7 +338,8 @@ const DEFAULT_CLIENTS: Client[] = [
     updatedAt: "2026-07-25T10:00:00.000Z"
   },
   {
-    id: "CL000002",
+    id: "2d1b7261-7805-41e8-ad07-6106fbc33a32",
+    clientNumber: "CL000002",
     category: "Individual",
     name: "KRISHNAKUMAR HEERALAL KANOJIYA",
     tradeName: "KRISHNAKUMAR HEERALAL KANOJIYA",
@@ -385,54 +385,107 @@ const DEFAULT_CLIENTS: Client[] = [
     status: "Active",
     tags: [],
     documents: {},
-    assignedStaff: [],
-    timeline: [],
     internalNotes: "",
     createdAt: "2026-07-25T10:00:00.000Z",
     updatedAt: "2026-07-25T10:00:00.000Z"
+  },
+  {
+    id: "6ea6117f-02d1-4546-8cb9-68d82806bf30",
+    clientNumber: "CL000003",
+    category: "Individual",
+    name: "Parag Kadam",
+    tradeName: "SK Galaxy",
+    businessName: "Hotel SK Galaxy",
+    clientSource: "Indirect / Referral",
+    referredBy: "Amit Agrawal",
+    mobile: "7666057070",
+    alternateMobile: "",
+    whatsapp: "7666057070",
+    email: "hotelskgalaxy@gmail.com",
+    website: "",
+    pan: "ATIPK1128J",
+    aadhaar: "",
+    gstin: "27ATIPK1128J1Z9",
+    tan: "",
+    udyamRegistration: "",
+    fssaiNumber: "",
+    iecNumber: "",
+    professionalTaxNumber: "",
+    pfNumber: "",
+    esicNumber: "",
+    cin: "",
+    din: "",
+    msme: "None",
+    officeAddress: "Mumbai",
+    city: "Mumbai",
+    state: "Maharashtra",
+    pinCode: "400076",
+    country: "India",
+    bankName: "",
+    accountHolder: "Parag Kadam",
+    accountNumber: "",
+    ifsc: "",
+    branch: "",
+    upi: "",
+    businessNature: "Hospitality & Services",
+    businessType: "Services",
+    constitution: "Individual",
+    dateOfIncorporation: "",
+    dateOfRegistration: "",
+    financialYear: "2026-27",
+    assessmentYear: "2027-28",
+    status: "Active",
+    tags: [],
+    documents: {},
+    assignedStaff: [],
+    timeline: [],
+    internalNotes: "",
+    createdAt: "2026-07-26T12:36:44.000Z",
+    updatedAt: "2026-07-26T12:36:44.000Z"
   }
 ];
 
 // Clients DB Actions
 export function getClients(): Client[] {
-  const data = localStorage.getItem(STORAGE_KEYS.CLIENTS);
+  const data = localStorage.getItem(STORAGE_KEYS.CLIENTS) || localStorage.getItem("jn_officeos_clients");
   if (!data) return DEFAULT_CLIENTS;
   try {
     const clients = JSON.parse(data);
     if (!Array.isArray(clients) || clients.length === 0) {
       return DEFAULT_CLIENTS;
     }
-    let changed = false;
-    const healed = clients.map((c: any) => {
-      let mobile = c.mobile || "";
-      if (!mobile || mobile.includes("ERROR") || mobile.includes("#") || mobile.trim() === "") {
-        if (c.id === "CL000001") {
-          mobile = "+91 9821482419";
-          changed = true;
-        } else if (c.id === "CL000002") {
-          mobile = "+91 9082404569";
-          changed = true;
-        } else {
-          mobile = "";
-        }
-      }
-      let name = (c.name || "").trim();
-      if (!name) {
-        if (c.id === "CL000001") { name = "Anchal Baleshwar Chobe"; changed = true; }
-        else if (c.id === "CL000002") { name = "KRISHNAKUMAR HEERALAL KANOJIYA"; changed = true; }
-        else if (c.id === "CL000003") { name = "Amit Agrawal"; changed = true; }
-        else if (c.id === "CL000004") { name = "Sumit Agrawal"; changed = true; }
-      }
-      if (c.name !== name || c.mobile !== mobile) {
-        c.name = name;
-        c.mobile = mobile;
-        changed = true;
-      }
-      return c;
+    
+    // Strictly purge ANY record that has id="CL000004" OR clientNumber="CL000004" OR non-canonical Parag Kadam ID
+    const clean = clients.filter((c: any) => {
+      if (!c) return false;
+      const cId = String(c.id || "").trim();
+      const cNum = String(c.clientNumber || c.client_number || cId).trim();
+      if (cId === "CL000004" || cNum === "CL000004") return false;
+      if ((c.name || c.client_name || "").includes("Parag Kadam") && cId !== "6ea6117f-02d1-4546-8cb9-68d82806bf30" && cId !== "CL000003" && cNum !== "CL000003") return false;
+      return true;
     });
-    if (changed) {
-      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(healed));
+
+    // Ensure canonical CL000003 Parag Kadam is present with proper clientNumber
+    const hasParag = clean.some((c: any) => c.id === "6ea6117f-02d1-4546-8cb9-68d82806bf30" || c.clientNumber === "CL000003" || c.id === "CL000003");
+    if (!hasParag) {
+      clean.push(DEFAULT_CLIENTS[2]);
     }
+
+    const healed = clean.map((c: any) => {
+      let clientNumber = c.clientNumber || c.client_number;
+      if (!clientNumber || clientNumber.startsWith("6ea6117f") || clientNumber === "CL000004") {
+        if (c.id === "c6528254-ba9c-428b-b488-78eea7589f83" || c.id === "CL000001") clientNumber = "CL000001";
+        else if (c.id === "2d1b7261-7805-41e8-ad07-6106fbc33a32" || c.id === "CL000002") clientNumber = "CL000002";
+        else if (c.id === "6ea6117f-02d1-4546-8cb9-68d82806bf30" || (c.name || "").includes("Parag Kadam")) clientNumber = "CL000003";
+      }
+      return {
+        ...c,
+        clientNumber: clientNumber || (c.id && c.id.startsWith("CL") ? c.id : "CL000003")
+      };
+    });
+
+    localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(healed));
+    localStorage.setItem("jn_officeos_clients", JSON.stringify(healed));
     return healed;
   } catch (e) {
     return DEFAULT_CLIENTS;
@@ -619,7 +672,7 @@ export function getUsers(): User[] {
         email: "jainnagarwal26@gmail.com",
         name: "Chirag Jain",
         role: UserRole.OWNER,
-        passwordHash: "", // No default password
+        passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash", // Central Supabase Auth Managed Identity
         permissions: {
           clientCrmView: true,
           clientCrmEdit: true,

@@ -54,7 +54,7 @@ export async function runAutomatedDataMigration(): Promise<MigrationReport> {
       }
     }
 
-    // 2. SAFE MIGRATION OF PRODUCTION CLIENTS (Preserve CL000001, CL000002, CL000004)
+    // 2. SAFE MIGRATION OF PRODUCTION CLIENTS (Preserve CL000001, CL000002, CL000003)
     const clients = getClients();
     report.totalClientsFound = clients.length;
 

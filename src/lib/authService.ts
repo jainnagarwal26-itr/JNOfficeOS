@@ -38,13 +38,54 @@ export class AuthService {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      const { data: profile } = await supabase
+      const userEmail = (user.email || "").toLowerCase().trim();
+      let { data: profile } = await supabase
         .from("jn_users")
         .select("*")
-        .eq("email", user.email || "")
+        .eq("email", userEmail)
         .single();
 
-      if (!profile) return null;
+      // Idempotent Reconciliation: If Supabase Auth account exists but jn_users profile missing, reconcile profile
+      if (!profile) {
+        console.warn(`[AuthService] Reconciling missing jn_users profile for auth user: ${userEmail}`);
+        const isOwnerAccount = userEmail === "jainnagarwal26@gmail.com";
+        const newProfile = {
+          user_number: isOwnerAccount ? "STF000001" : "STF000002",
+          email: userEmail,
+          password_hash: "$2a$10$SupabaseAuthManagedIdentityHash",
+          full_name: isOwnerAccount ? "Chirag Jain" : (user.user_metadata?.full_name || userEmail.split("@")[0]),
+          role: isOwnerAccount ? "OWNER" : "STAFF",
+          department: isOwnerAccount ? "Taxation" : "Administration",
+          designation: isOwnerAccount ? "Managing CA & Owner" : "Staff Member",
+          is_active: true,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data: inserted, error: insertErr } = await supabase
+          .from("jn_users")
+          .upsert(newProfile, { onConflict: "email" })
+          .select("*")
+          .single();
+
+        if (insertErr) {
+          console.error("[AuthService] Profile reconciliation error:", insertErr);
+          return null;
+        }
+
+        profile = inserted;
+
+        // Log audit event for reconciliation
+        await supabase.from("jn_audit_logs").insert([{
+          user_email: userEmail,
+          user_name: profile.full_name,
+          role: profile.role,
+          action: "AUTH_PROFILE_RECONCILED",
+          category: "AUTH",
+          details: `Reconciled jn_users profile for authenticated Supabase user ID ${user.id}.`,
+          ip_address: "127.0.0.1",
+          created_at: new Date().toISOString()
+        }]);
+      }
 
       const role = (profile.role || "STAFF") as UserRole;
 
