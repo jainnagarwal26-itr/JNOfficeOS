@@ -38,6 +38,7 @@ import SmartDmsMaster from "./components/SmartDmsMaster";
 import ClientPortalView from "./components/ClientPortalView";
 import ComplianceRegisterView from "./components/ComplianceRegisterView";
 import PartnerComplianceCommandCenter from "./components/PartnerComplianceCommandCenter";
+import { StaffDailyWorkReporting } from "./components/StaffDailyWorkReporting";
 import { EnterpriseConfigurationStudio } from "./components/EnterpriseConfigurationStudio";
 import { ModalProvider } from "./components/ModalFramework";
 
@@ -422,6 +423,14 @@ export default function App() {
             onAddAuditLog={handleAddAuditLog} 
           />
         );
+      case "daily_reports":
+      case "staff_daily_reports":
+        return (
+          <StaffDailyWorkReporting
+            currentUser={currentUser}
+            onAddAuditLog={handleAddAuditLog}
+          />
+        );
       case "invoices":
         if (!hasPermission(currentUser, "invoiceView")) {
           return <PermissionDeniedBlock requiredPermission="invoiceView" />;
@@ -652,6 +661,14 @@ export default function App() {
                   Automation & Alerts Hub
                 </span>
                 <ChevronRight className={`w-3.5 h-3.5 ${activeView === "automation" ? "text-[#0D2C6C]" : "text-white/30"}`} />
+              </button>
+
+              <button onClick={() => setActiveView("daily_reports")} className={getSidebarItemClass("daily_reports")}>
+                <span className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-[#D4AF37]" />
+                  {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Staff Daily Reports" : "My Daily Work"}
+                </span>
+                <ChevronRight className={`w-3.5 h-3.5 ${activeView === "daily_reports" ? "text-[#0D2C6C]" : "text-white/30"}`} />
               </button>
 
               <button onClick={() => setActiveView("invoices")} className={getSidebarItemClass("invoices")}>

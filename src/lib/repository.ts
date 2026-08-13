@@ -663,6 +663,32 @@ export class CaseRepository {
       payments: []
     };
 
+    // Route central authoritative invoice creation to Supabase PostgreSQL
+    import("./centralInvoiceRepository").then(({ CentralInvoiceRepository }) => {
+      CentralInvoiceRepository.createInvoice({
+        clientId: currentCase.clientId,
+        clientName: currentCase.clientName,
+        invoiceDate: timestamp.split("T")[0],
+        dueDate: dueDate,
+        subTotal: subTotal,
+        gstAmount: gstAmount,
+        totalAmount: totalAmount,
+        sourceModule: "CASE_MANAGEMENT",
+        sourceReferenceId: currentCase.id,
+        createdBy: currentUser.id,
+        items: [{
+          serviceId: currentCase.serviceId,
+          serviceName: currentCase.serviceName,
+          quantity: 1,
+          unitPrice: subTotal,
+          taxableAmount: subTotal,
+          gstRate: gstRate,
+          gstAmount: gstAmount,
+          totalAmount: totalAmount
+        }]
+      });
+    });
+
     const invEvt: CaseTimelineEvent = {
       id: `evt_inv_${Date.now()}`,
       timestamp,

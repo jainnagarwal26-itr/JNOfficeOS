@@ -490,6 +490,35 @@ export class FinancialRepository {
     this.invoicesCache.unshift(newInvoice);
     this.persist();
 
+    // Route central authoritative invoice creation to Supabase PostgreSQL
+    import("./centralInvoiceRepository").then(({ CentralInvoiceRepository }) => {
+      CentralInvoiceRepository.createInvoice({
+        clientId: newInvoice.clientId,
+        clientName: newInvoice.clientName,
+        invoiceDate: newInvoice.date,
+        dueDate: newInvoice.dueDate,
+        subTotal: newInvoice.subTotal,
+        cgstAmount: newInvoice.cgstAmount,
+        sgstAmount: newInvoice.sgstAmount,
+        igstAmount: newInvoice.igstAmount,
+        gstAmount: (newInvoice.cgstAmount || 0) + (newInvoice.sgstAmount || 0) + (newInvoice.igstAmount || 0),
+        totalAmount: newInvoice.grandTotal,
+        notes: newInvoice.items?.map(i => i.description).filter(Boolean).join("; ") || "",
+        sourceModule: "INVOICE_ENGINE",
+        sourceReferenceId: newInvoice.id,
+        createdBy: currentUser.id,
+        items: newInvoice.items.map(item => ({
+          serviceName: item.serviceName,
+          quantity: item.quantity,
+          unitPrice: item.rate,
+          taxableAmount: item.taxableValue,
+          gstRate: item.gstRate,
+          gstAmount: item.cgst + item.sgst + item.igst,
+          totalAmount: item.total
+        }))
+      });
+    });
+
     // Sync back to Case
     this.syncInvoiceToCase(newInvoice, currentUser);
 
