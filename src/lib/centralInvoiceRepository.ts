@@ -6,10 +6,9 @@
 
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { getClients, addAuditLog } from "./db";
-import { Invoice } from "./financialRepository";
 
 export interface CreateCentralInvoicePayload {
-  clientId: string; // Canonical UUID or client_number (will resolve to UUID)
+  clientId?: string | null; // Canonical UUID or client_number (will resolve to UUID)
   clientName: string;
   clientGstin?: string;
   clientAddress?: string;
@@ -25,9 +24,9 @@ export interface CreateCentralInvoicePayload {
   terms?: string;
   sourceModule: "INVOICE_ENGINE" | "CASE_MANAGEMENT" | "COMPLIANCE" | "CLIENT_SERVICE" | "OTHER";
   sourceReferenceId?: string;
-  createdBy: string; // User UUID
+  createdBy?: string; // User UUID
   items: Array<{
-    serviceId?: string;
+    serviceId?: string | null;
     serviceName: string;
     sacCode?: string;
     quantity: number;
@@ -42,9 +41,53 @@ export interface CreateCentralInvoicePayload {
 export class CentralInvoiceRepository {
 
   /**
+   * Resolves User ID to canonical Supabase UUID
+   */
+  public static async resolveUserUuid(userIdOrEmail?: string): Promise<string> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (userIdOrEmail && isUuid.test(userIdOrEmail)) {
+      return userIdOrEmail;
+    }
+
+    // Default Super Admin / Owner UUID (Chirag Jain)
+    const OWNER_UUID = "57235de4-9fc6-42a5-86f3-df2dbb4506f7";
+
+    if (!userIdOrEmail || userIdOrEmail === "usr_owner_001" || userIdOrEmail.includes("chirag") || userIdOrEmail.includes("jainnagarwal26")) {
+      return OWNER_UUID;
+    }
+
+    if (userIdOrEmail.includes("amit")) return "06158e82-8257-442d-8769-11e2c8292b62";
+    if (userIdOrEmail.includes("shruti")) return "ce9ce252-fce5-4d4b-be2b-bf96349027a6";
+    if (userIdOrEmail.includes("anju")) return "40f4a361-359b-473e-9f5e-98545068e16c";
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { data } = await supabase
+          .from("jn_users")
+          .select("id")
+          .or(`email.eq.${userIdOrEmail},user_number.eq.${userIdOrEmail}`)
+          .limit(1);
+
+        if (data && data.length > 0) {
+          return data[0].id;
+        }
+      } catch (e) {}
+    }
+
+    return OWNER_UUID;
+  }
+
+  /**
    * Resolves client ID input to canonical Supabase UUID
    */
-  public static async resolveClientUuid(clientIdOrNumber: string): Promise<{ uuid: string; clientName: string; gstin?: string; address?: string }> {
+  public static async resolveClientUuid(clientIdOrNumber?: string | null): Promise<{ uuid: string | null; clientName: string; gstin?: string; address?: string }> {
+    if (!clientIdOrNumber || clientIdOrNumber === "walk-in") {
+      return {
+        uuid: null,
+        clientName: "Walk-In Client"
+      };
+    }
+
     const knownUuids: Record<string, string> = {
       "CL000001": "c6528254-ba9c-428b-b488-78eea7589f83",
       "CL000002": "2d1b7261-7805-41e8-ad07-6106fbc33a32",
@@ -69,7 +112,7 @@ export class CentralInvoiceRepository {
             uuid: found.id, // Canonical UUID
             clientName: found.name,
             gstin: found.gstin,
-            address: found.address
+            address: found.officeAddress || found.city || ""
           };
         }
       } catch (e) {}
@@ -79,7 +122,7 @@ export class CentralInvoiceRepository {
     if (isSupabaseConfigured()) {
       try {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientIdOrNumber);
-        let query = supabase.from("jn_clients").select("id, name, gstin, address, client_number");
+        let query = supabase.from("jn_clients").select("id, name, gstin, office_address, client_number");
         
         if (isUuid) {
           query = query.eq("id", clientIdOrNumber);
@@ -94,14 +137,15 @@ export class CentralInvoiceRepository {
             uuid: data[0].id,
             clientName: data[0].name,
             gstin: data[0].gstin,
-            address: data[0].address
+            address: data[0].office_address
           };
         }
       } catch (e) {}
     }
 
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientIdOrNumber);
     return {
-      uuid: clientIdOrNumber,
+      uuid: isUuid ? clientIdOrNumber : null,
       clientName: "Client"
     };
   }
@@ -119,12 +163,13 @@ export class CentralInvoiceRepository {
       return { success: false, error: "Invoice must contain at least one line item." };
     }
 
-    // 1. Resolve Canonical Client UUID
+    // 1. Resolve Canonical Client UUID & User UUID
     const clientMeta = await this.resolveClientUuid(payload.clientId);
     const clientUuid = clientMeta.uuid;
     const clientName = payload.clientName || clientMeta.clientName;
     const clientGstin = payload.clientGstin || clientMeta.gstin || "";
     const clientAddress = payload.clientAddress || clientMeta.address || "";
+    const createdByUuid = await this.resolveUserUuid(payload.createdBy);
 
     // 2. Compute GST Split
     const totalGst = payload.gstAmount || 0;
@@ -138,8 +183,8 @@ export class CentralInvoiceRepository {
         const rpcPayload = {
           p_client_id: clientUuid,
           p_client_name: clientName,
-          p_client_gstin: clientGstin,
-          p_client_address: clientAddress,
+          p_client_gstin: clientGstin || null,
+          p_client_address: clientAddress || null,
           p_invoice_date: payload.invoiceDate,
           p_due_date: payload.dueDate,
           p_sub_total: payload.subTotal,
@@ -152,7 +197,7 @@ export class CentralInvoiceRepository {
           p_terms: payload.terms || null,
           p_source_module: payload.sourceModule,
           p_source_reference_id: payload.sourceReferenceId || null,
-          p_created_by: payload.createdBy,
+          p_created_by: createdByUuid,
           p_items: payload.items.map(item => ({
             service_id: item.serviceId || null,
             service_name: item.serviceName,
@@ -180,6 +225,8 @@ export class CentralInvoiceRepository {
             invoiceId: rpcRes.invoice_id,
             invoiceNumber: rpcRes.invoice_number
           };
+        } else if (rpcErr) {
+          console.warn("[CentralInvoiceRepository] RPC returned error, attempting fallback insert:", rpcErr);
         }
       } catch (err) {
         console.warn("[CentralInvoiceRepository] RPC fallback to transaction batch:", err);
@@ -213,7 +260,7 @@ export class CentralInvoiceRepository {
 
         const invoiceNumber = `JNA/${fy}/${String(maxNum + 1).padStart(6, "0")}`;
 
-        // Header Insert (Defensive mapping for standard schema)
+        // Header Insert
         const headerPayload: any = {
           invoice_number: invoiceNumber,
           invoice_date: payload.invoiceDate,
@@ -233,7 +280,9 @@ export class CentralInvoiceRepository {
           status: "UNPAID",
           notes: payload.notes || null,
           terms: payload.terms || null,
-          created_by: payload.createdBy
+          source_module: payload.sourceModule,
+          source_reference_id: payload.sourceReferenceId || null,
+          created_by: createdByUuid
         };
 
         const { data: headerData, error: headerErr } = await supabase
@@ -247,7 +296,7 @@ export class CentralInvoiceRepository {
         // Line Items Insert
         const itemPayloads = payload.items.map(item => ({
           invoice_id: headerData.id,
-          service_id: item.serviceId || null,
+          service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
           service_name: item.serviceName,
           sac_code: item.sacCode || "998311",
           quantity: item.quantity,
@@ -281,9 +330,8 @@ export class CentralInvoiceRepository {
       } catch (err: any) {
         console.error("[CentralInvoiceRepository] Central invoice save error:", err);
         return {
-          success: true,
-          invoiceId: `inv_local_${Date.now()}`,
-          invoiceNumber: `JNA/2026-27/${String(Date.now()).slice(-6)}`
+          success: false,
+          error: err.message || "Failed to persist invoice to PostgreSQL database."
         };
       }
     }
@@ -338,7 +386,7 @@ export class CentralInvoiceRepository {
 
         const itemPayloads = payload.items.map(item => ({
           invoice_id: updatedHeader.id,
-          service_id: item.serviceId || null,
+          service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
           service_name: item.serviceName,
           sac_code: item.sacCode || "998311",
           quantity: item.quantity,

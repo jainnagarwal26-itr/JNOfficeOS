@@ -216,6 +216,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
   // Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [customInvoiceNumber, setCustomInvoiceNumber] = useState<string>("");
+  const [isSubmittingInvoice, setIsSubmittingInvoice] = useState<boolean>(false);
 
   const handleOpenEditInvoice = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
@@ -256,7 +257,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
   };
 
   // Main Submit handler to raise/update invoice
-  const handleCreateInvoice = (e: React.FormEvent) => {
+  const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (invoiceTargetType === "case" && !linkedCaseId) {
@@ -353,6 +354,8 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       }
     }
 
+    setIsSubmittingInvoice(true);
+
     try {
       // Map temporary structure into repository items
       const itemsToSave: InvoiceItem[] = finalItems.map((item, idx) => {
@@ -386,7 +389,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           walkInGstin: clientId === "walk-in" ? walkInGstin.trim() : undefined
         }, currentUser);
       } else {
-        FinancialRepository.createInvoice({
+        const res = await FinancialRepository.createInvoiceAsync({
           type: invoiceType,
           caseId,
           clientId,
@@ -405,7 +408,13 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           walkInAddress: clientId === "walk-in" ? walkInAddress.trim() : undefined,
           walkInMobile: clientId === "walk-in" ? walkInMobile.trim() : undefined,
           walkInGstin: clientId === "walk-in" ? walkInGstin.trim() : undefined
-        }, currentUser);
+        }, currentUser, customInvoiceNumber.trim());
+
+        if (!res.success) {
+          alert(`Invoice Creation Failed: ${res.error || "Could not persist invoice to PostgreSQL database."}`);
+          setIsSubmittingInvoice(false);
+          return;
+        }
 
         onAddAuditLog(
           currentUser.email,
@@ -436,6 +445,8 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
     } catch (err: any) {
       alert(err.message || "Error generating invoice.");
+    } finally {
+      setIsSubmittingInvoice(false);
     }
   };
 
@@ -1898,9 +1909,21 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#D4AF37] hover:bg-[#c29e2f] text-[#0D2C6C] font-extrabold rounded-xl text-xs transition-all shadow-md shadow-amber-900/10 cursor-pointer"
+              disabled={isSubmittingInvoice}
+              className={`px-5 py-2 text-[#0D2C6C] font-extrabold rounded-xl text-xs transition-all shadow-md shadow-amber-900/10 cursor-pointer flex items-center gap-2 ${
+                isSubmittingInvoice 
+                  ? "bg-[#D4AF37]/50 cursor-not-allowed opacity-80" 
+                  : "bg-[#D4AF37] hover:bg-[#c29e2f]"
+              }`}
             >
-              {editingInvoiceId ? "Save & Update Invoice" : "Authenticate & Raise Invoice"}
+              {isSubmittingInvoice ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Authenticating & Saving...</span>
+                </>
+              ) : (
+                editingInvoiceId ? "Save & Update Invoice" : "Authenticate & Raise Invoice"
+              )}
             </button>
           </ModalFooter>
         </form>

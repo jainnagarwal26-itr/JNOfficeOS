@@ -10,7 +10,7 @@ import {
   Settings, LogOut, ChevronRight, Menu, X, Shield, Clock, Database, 
   Sparkles, FileSpreadsheet, Lock, AlertCircle, FileText, Landmark,
   FolderOpen, CalendarDays, Receipt, BarChart3, UserCheck, AlertOctagon, HelpCircle,
-  ClipboardList, Briefcase, Cpu
+  ClipboardList, Briefcase, Cpu, MessageSquare
 } from "lucide-react";
 
 import { User, UserRole, FirmSettings } from "./types";
@@ -39,6 +39,7 @@ import ClientPortalView from "./components/ClientPortalView";
 import ComplianceRegisterView from "./components/ComplianceRegisterView";
 import PartnerComplianceCommandCenter from "./components/PartnerComplianceCommandCenter";
 import { StaffDailyWorkReporting } from "./components/StaffDailyWorkReporting";
+import { PrivateStaffChat } from "./components/PrivateStaffChat";
 import { EnterpriseConfigurationStudio } from "./components/EnterpriseConfigurationStudio";
 import { ModalProvider } from "./components/ModalFramework";
 
@@ -431,6 +432,13 @@ export default function App() {
             onAddAuditLog={handleAddAuditLog}
           />
         );
+      case "private_chat":
+        return (
+          <PrivateStaffChat
+            currentUser={currentUser}
+            onAddAuditLog={handleAddAuditLog}
+          />
+        );
       case "invoices":
         if (!hasPermission(currentUser, "invoiceView")) {
           return <PermissionDeniedBlock requiredPermission="invoiceView" />;
@@ -669,6 +677,14 @@ export default function App() {
                   {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Staff Daily Reports" : "My Daily Work"}
                 </span>
                 <ChevronRight className={`w-3.5 h-3.5 ${activeView === "daily_reports" ? "text-[#0D2C6C]" : "text-white/30"}`} />
+              </button>
+
+              <button onClick={() => setActiveView("private_chat")} className={getSidebarItemClass("private_chat")}>
+                <span className="flex items-center gap-2.5">
+                  <MessageSquare className="w-4 h-4 text-[#D4AF37]" />
+                  {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}
+                </span>
+                <ChevronRight className={`w-3.5 h-3.5 ${activeView === "private_chat" ? "text-[#0D2C6C]" : "text-white/30"}`} />
               </button>
 
               <button onClick={() => setActiveView("invoices")} className={getSidebarItemClass("invoices")}>

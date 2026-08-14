@@ -535,6 +535,121 @@ export class FinancialRepository {
     return newInvoice;
   }
 
+  public static async createInvoiceAsync(
+    invoiceData: Omit<Invoice, "id" | "subTotal" | "taxableAmount" | "cgstAmount" | "sgstAmount" | "igstAmount" | "roundOff" | "grandTotal" | "amountInWords" | "createdAt" | "updatedAt">,
+    currentUser: User,
+    customInvoiceNumber?: string
+  ): Promise<{ success: boolean; invoice?: Invoice; error?: string }> {
+    this.init();
+
+    if (currentUser.role !== UserRole.OWNER && !currentUser.permissions.invoiceCreate) {
+      return { success: false, error: "Access Denied: You do not have permission to create invoices." };
+    }
+
+    let subTotal = 0;
+    let cgstSum = 0;
+    let sgstSum = 0;
+    let igstSum = 0;
+    let cessSum = 0;
+    const discountAmount = invoiceData.discountAmount || 0;
+
+    const itemsWithTotals = invoiceData.items.map(item => {
+      const taxableValue = parseFloat((item.quantity * item.rate - item.discount).toFixed(2));
+      const cgst = parseFloat(item.cgst.toFixed(2));
+      const sgst = parseFloat(item.sgst.toFixed(2));
+      const igst = parseFloat(item.igst.toFixed(2));
+      const cess = parseFloat((item.cess || 0).toFixed(2));
+      const total = parseFloat((taxableValue + cgst + sgst + igst + cess).toFixed(2));
+
+      subTotal += item.quantity * item.rate;
+      cgstSum += cgst;
+      sgstSum += sgst;
+      igstSum += igst;
+      cessSum += cess;
+
+      return {
+        ...item,
+        taxableValue,
+        total
+      };
+    });
+
+    subTotal = parseFloat(subTotal.toFixed(2));
+    const taxableAmount = parseFloat((subTotal - discountAmount).toFixed(2));
+    const rawGrandTotal = taxableAmount + cgstSum + sgstSum + igstSum + cessSum;
+    const grandTotal = Math.round(rawGrandTotal);
+    const roundOff = parseFloat((grandTotal - rawGrandTotal).toFixed(2));
+    const amountInWords = numberToWords(grandTotal);
+    const timestamp = new Date().toISOString();
+
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    const centralRes = await CentralInvoiceRepository.createInvoice({
+      clientId: invoiceData.clientId,
+      clientName: invoiceData.clientName,
+      invoiceDate: invoiceData.date,
+      dueDate: invoiceData.dueDate,
+      subTotal,
+      cgstAmount: parseFloat(cgstSum.toFixed(2)),
+      sgstAmount: parseFloat(sgstSum.toFixed(2)),
+      igstAmount: parseFloat(igstSum.toFixed(2)),
+      gstAmount: parseFloat((cgstSum + sgstSum + igstSum).toFixed(2)),
+      totalAmount: grandTotal,
+      notes: invoiceData.items?.map(i => i.description).filter(Boolean).join("; ") || "",
+      sourceModule: "INVOICE_ENGINE",
+      createdBy: currentUser.id,
+      items: invoiceData.items.map(item => ({
+        serviceName: item.serviceName,
+        quantity: item.quantity,
+        unitPrice: item.rate,
+        taxableAmount: item.taxableValue,
+        gstRate: item.gstRate,
+        gstAmount: item.cgst + item.sgst + item.igst,
+        totalAmount: item.total
+      }))
+    });
+
+    if (!centralRes.success) {
+      return { success: false, error: centralRes.error || "Failed to persist invoice to PostgreSQL database." };
+    }
+
+    const assignedId = centralRes.invoiceNumber || customInvoiceNumber || this.generateInvoiceId();
+
+    const newInvoice: Invoice = {
+      ...invoiceData,
+      id: assignedId,
+      subTotal,
+      discountAmount,
+      taxableAmount,
+      cgstAmount: parseFloat(cgstSum.toFixed(2)),
+      sgstAmount: parseFloat(sgstSum.toFixed(2)),
+      igstAmount: parseFloat(igstSum.toFixed(2)),
+      cessAmount: parseFloat(cessSum.toFixed(2)),
+      roundOff,
+      grandTotal,
+      amountInWords,
+      items: itemsWithTotals,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    // Cache locally
+    this.invoicesCache.unshift(newInvoice);
+    this.persist();
+
+    this.syncInvoiceToCase(newInvoice, currentUser);
+
+    addAuditLog(
+      currentUser.email,
+      currentUser.name,
+      currentUser.role,
+      "INVOICE_GENERATED",
+      "DATABASE",
+      `Enterprise Invoice '${assignedId}' (${invoiceData.type}) generated for Client '${invoiceData.clientName}' linked to Case '${invoiceData.caseId}' for INR ${grandTotal.toLocaleString("en-IN")}.`
+    );
+
+    return { success: true, invoice: newInvoice };
+  }
+
   public static updateInvoice(
     id: string,
     updates: Partial<Omit<Invoice, "createdAt" | "amountInWords" | "payments">> & { customInvoiceNumber?: string },
