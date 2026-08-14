@@ -9,7 +9,7 @@ import {
   Plus, Search, Filter, Calendar, FileText, Check, X, Shield, Clock, Database, 
   Sparkles, FileSpreadsheet, Lock, AlertCircle, Landmark, FolderOpen, CalendarDays, 
   Receipt, BarChart3, UserCheck, AlertOctagon, HelpCircle, ChevronRight, Download, 
-  Eye, CornerDownRight, PlusCircle, Trash, Trash2, Send, CheckCircle2, ChevronDown, Printer, Copy, RotateCcw, Share2, DollarSign, Pencil
+  Eye, CornerDownRight, PlusCircle, Trash, Trash2, Send, CheckCircle2, ChevronDown, Printer, Copy, RotateCcw, Share2, DollarSign, Pencil, RefreshCw
 } from "lucide-react";
 import { User, UserRole, Client, Service, Case } from "../types";
 import { QRCodeSVG } from "qrcode.react";
