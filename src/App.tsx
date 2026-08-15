@@ -519,20 +519,21 @@ export default function App() {
       <div className="h-1 w-full bg-gradient-to-r from-[#0D2C6C] via-[#D4AF37] to-[#0D2C6C] shrink-0"></div>
 
       {/* Main Header */}
-      <header className="bg-white border-b border-slate-100 px-4 md:px-8 py-3.5 flex items-center justify-between shrink-0 shadow-sm z-30">
+      <header className="bg-white border-b border-slate-100 px-3 sm:px-6 md:px-8 py-2.5 sm:py-3.5 flex items-center justify-between shrink-0 shadow-sm z-30">
         
         {/* Left Side: Brand Logo Vector */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 pr-2">
           <button
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="md:hidden p-1.5 text-slate-500 hover:bg-slate-50 rounded-lg cursor-pointer"
+            className="md:hidden p-1.5 text-slate-500 hover:bg-slate-50 rounded-lg cursor-pointer shrink-0"
+            aria-label="Toggle navigation menu"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Elegant logo representing the official JA brand */}
-            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center overflow-hidden shadow-sm border border-slate-100 shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-lg flex items-center justify-center overflow-hidden shadow-sm border border-slate-100 shrink-0">
               <img 
                 src="/logo.jpeg" 
                 alt="Jain Agarwal & Co. Logo" 
@@ -540,11 +541,11 @@ export default function App() {
                 referrerPolicy="no-referrer"
               />
             </div>
-            <div>
-              <div className="font-display font-extrabold text-sm text-[#0D2C6C] tracking-tight leading-none uppercase">
+            <div className="min-w-0">
+              <div className="font-display font-extrabold text-xs sm:text-sm text-[#0D2C6C] tracking-tight leading-none uppercase truncate">
                 Jain Agarwal & Co.
               </div>
-              <span className="text-[10px] text-slate-400 font-semibold tracking-wide font-sans">
+              <span className="text-[9px] sm:text-[10px] text-slate-400 font-semibold tracking-wide font-sans block truncate">
                 JN OfficeOS • Practice Platform
               </span>
             </div>
@@ -552,7 +553,7 @@ export default function App() {
         </div>
 
         {/* Right Side: Security Monitor and User Profile */}
-        <div className="flex items-center gap-4 text-xs">
+        <div className="flex items-center gap-2 sm:gap-4 text-xs shrink-0">
           
           {/* Security Countdown Monitor */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg font-mono text-slate-500">
@@ -576,7 +577,7 @@ export default function App() {
           {/* Logout Button */}
           <button
             onClick={() => handleLogout("MANUAL")}
-            className="p-2 border border-slate-200 hover:border-red-200 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-lg cursor-pointer transition-colors"
+            className="p-1.5 sm:p-2 border border-slate-200 hover:border-red-200 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-lg cursor-pointer transition-colors shrink-0"
             title="Terminate Active Session"
           >
             <LogOut className="w-4 h-4" />
@@ -602,16 +603,14 @@ export default function App() {
                   <LayoutDashboard className="w-4 h-4" />
                   Practice Workspace
                 </span>
+                <ChevronRight className={`w-3.5 h-3.5 ${activeView === "dashboard" ? "text-[#0D2C6C]" : "text-white/30"}`} />
               </button>
             </div>
 
-            {/* Section 2: Future Business Modules Skeletons */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-4">
-                <span className="text-[9px] font-bold text-white/55 uppercase tracking-widest">Core Operations</span>
-                <span className="text-[8px] font-bold text-[#D4AF37] uppercase tracking-wider bg-white/10 px-1.5 rounded-md border border-white/5">Locked</span>
-              </div>
-
+            {/* Section 2: Core Operating Engine */}
+            <div className="space-y-1.5">
+              <span className="block text-[9px] font-bold text-[#D4AF37] uppercase tracking-widest pl-4">Core Operations</span>
+              
               <button onClick={() => setActiveView("cases")} className={getSidebarItemClass("cases")}>
                 <span className="flex items-center gap-2.5">
                   <Briefcase className="w-4 h-4" />
@@ -830,140 +829,240 @@ export default function App() {
                 onClick={() => setIsMobileSidebarOpen(false)}
               ></div>
 
-              {/* Sidebar Panel Drawer */}
+              {/* Sidebar Panel Drawer Container */}
               <motion.aside 
                 initial={{ x: "-100%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "-100%" }}
-                transition={{ type: "tween", duration: 0.25 }}
-                className="fixed inset-y-0 left-0 w-64 bg-[#0D2C6C] text-white p-5 space-y-6 z-50 md:hidden flex flex-col justify-between shadow-2xl border-r border-blue-950/20"
+                transition={{ type: "tween", duration: 0.22 }}
+                className="fixed inset-y-0 left-0 w-72 max-w-[85vw] h-full max-h-screen bg-[#0D2C6C] text-white z-50 md:hidden flex flex-col shadow-2xl border-r border-blue-950/20 overflow-hidden"
               >
-                <div className="space-y-6">
-                  <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                {/* Fixed Drawer Header */}
+                <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0D2C6C] sticky top-0 z-10">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-white rounded flex items-center justify-center overflow-hidden shrink-0">
+                      <img src="/logo.jpeg" alt="Logo" className="w-full h-full object-contain" />
+                    </div>
                     <span className="font-display font-extrabold text-xs text-[#D4AF37] tracking-wider uppercase">JN OfficeOS Menu</span>
-                    <button onClick={() => setIsMobileSidebarOpen(false)}>
-                      <X className="w-4 h-4 text-white/60" />
+                  </div>
+                  <button 
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Independently Scrollable Navigation List */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-5 scrollbar-thin scrollbar-thumb-white/20">
+                  
+                  {/* Items Group 1: Principal Console */}
+                  <div className="space-y-1">
+                    <span className="block text-[9px] font-bold text-[#D4AF37] uppercase tracking-widest pl-3 mb-1">Principal Console</span>
+                    <button
+                      onClick={() => { setActiveView("dashboard"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("dashboard")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <LayoutDashboard className="w-4 h-4" />
+                        Practice Workspace
+                      </span>
                     </button>
                   </div>
 
-                  <div className="space-y-5">
-                    {/* Items Group 1 */}
-                    <div className="space-y-1">
-                      <button
-                        onClick={() => { setActiveView("dashboard"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("dashboard")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <LayoutDashboard className="w-4 h-4" />
-                          Practice Workspace
-                        </span>
-                      </button>
-                    </div>
+                  {/* Items Group 2: Core Operations */}
+                  <div className="space-y-1">
+                    <span className="block text-[9px] font-bold text-white/55 uppercase tracking-widest pl-3 mb-1">Core Operations</span>
+                    
+                    <button
+                      onClick={() => { setActiveView("cases"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("cases")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Briefcase className="w-4 h-4" />
+                        Case Directory
+                      </span>
+                    </button>
 
-                    {/* Items Group 2 Skeletons */}
-                    <div className="space-y-1">
-                      <span className="block text-[8px] font-bold text-white/55 uppercase tracking-widest pl-4 mb-2">Core Operations</span>
-                      
-                      <button
-                        onClick={() => { setActiveView("daily_reports"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("daily_reports")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
-                          {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Staff Daily Reports" : "My Daily Work"}
-                        </span>
-                      </button>
+                    <button
+                      onClick={() => { setActiveView("clients"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("clients")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Users className="w-4 h-4" />
+                        Client CRM Ledger
+                      </span>
+                    </button>
 
-                      <button
-                        onClick={() => { setActiveView("private_chat"); setSelectedChatTarget(null); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("private_chat")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
-                          <span>{currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}</span>
-                        </span>
-                        {privateChatUnread > 0 && (
-                          <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
-                            {privateChatUnread}
-                          </span>
-                        )}
-                      </button>
+                    <button
+                      onClick={() => { setActiveView("compliance"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("compliance")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                        Compliance Register
+                      </span>
+                    </button>
 
-                      {["cases", "clients", "services", "workflows", "automation", "invoices", "expenses", "reports", "dms"].map((v) => {
-                        let label = v.charAt(0).toUpperCase() + v.slice(1) + " Module";
-                        if (v === "cases") label = "Enterprise Case Directory";
-                        else if (v === "workflows") label = "Compliance Workflows";
-                        else if (v === "automation") label = "Automation & Alerts Hub";
-                        else if (v === "clients") label = "Client CRM Ledger";
-                        else if (v === "services") label = "Services Catalog";
-                        else if (v === "dms") label = "Smart DMS PRO Dashboard";
-                        return (
-                          <button
-                            key={v}
-                            onClick={() => { setActiveView(v); setIsMobileSidebarOpen(false); }}
-                            className={getSidebarItemClass(v)}
-                          >
-                            <span className="flex items-center gap-2.5">
-                              <ChevronRight className="w-3.5 h-3.5 text-white/30" />
-                              {label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button
+                      onClick={() => { setActiveView("compliance_command_center"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("compliance_command_center")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <AlertOctagon className="w-4 h-4 text-amber-400" />
+                        Partner Command Center
+                      </span>
+                    </button>
 
-                    {/* Items Group 3 admin */}
-                    <div className="space-y-1">
-                      <span className="block text-[8px] font-bold text-white/55 uppercase tracking-widest pl-4 mb-2">Administration</span>
-                      
-                      <button
-                        onClick={() => { setActiveView("users"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("users")}
-                        disabled={!hasPermission(currentUser, "userManagementView")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <Shield className="w-4 h-4" />
-                          User Profiles & Access
-                        </span>
-                      </button>
+                    <button
+                      onClick={() => { setActiveView("services"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("services")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Receipt className="w-4 h-4" />
+                        Services Catalog
+                      </span>
+                    </button>
 
-                      <button
-                        onClick={() => { setActiveView("audit"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("audit")}
-                        disabled={!hasPermission(currentUser, "auditLogView")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <Activity className="w-4 h-4" />
-                          System Audit Ledger
-                        </span>
-                      </button>
+                    <button
+                      onClick={() => { setActiveView("workflows"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("workflows")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <ClipboardList className="w-4 h-4" />
+                        Compliance Workflows
+                      </span>
+                    </button>
 
-                      <button
-                        onClick={() => { setActiveView("settings"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("settings")}
-                        disabled={!hasPermission(currentUser, "settingsView")}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <Settings className="w-4 h-4" />
-                          Practice Settings
-                        </span>
-                      </button>
+                    <button
+                      onClick={() => { setActiveView("automation"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("automation")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Cpu className="w-4 h-4" />
+                        Automation & Alerts Hub
+                      </span>
+                    </button>
 
-                      <button
-                        onClick={() => { setActiveView("studio"); setIsMobileSidebarOpen(false); }}
-                        className={getSidebarItemClass("studio")}
-                      >
-                        <span className="flex items-center gap-2.5 text-yellow-400">
-                          <Settings className="w-4 h-4" />
-                          Enterprise Studio
+                    <button
+                      onClick={() => { setActiveView("daily_reports"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("daily_reports")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Staff Daily Reports" : "My Daily Work"}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("private_chat"); setSelectedChatTarget(null); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("private_chat")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <span>{currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}</span>
+                      </span>
+                      {privateChatUnread > 0 && (
+                        <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse">
+                          {privateChatUnread}
                         </span>
-                      </button>
-                    </div>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("invoices"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("invoices")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <FileText className="w-4 h-4" />
+                        Invoicing Engine
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("expenses"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("expenses")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Landmark className="w-4 h-4" />
+                        Expense Tracker
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("reports"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("reports")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <BarChart3 className="w-4 h-4" />
+                        Financial Reports
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("dms"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("dms")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <FolderOpen className="w-4 h-4 text-amber-400" />
+                        Smart DMS PRO
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Items Group 3: Administration */}
+                  <div className="space-y-1 pt-2">
+                    <span className="block text-[9px] font-bold text-white/55 uppercase tracking-widest pl-3 mb-1">Administration</span>
+                    
+                    <button
+                      onClick={() => { setActiveView("users"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("users")}
+                      disabled={!hasPermission(currentUser, "userManagementView")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Shield className="w-4 h-4" />
+                        User Profiles & Access
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("audit"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("audit")}
+                      disabled={!hasPermission(currentUser, "auditLogView")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Activity className="w-4 h-4" />
+                        System Audit Ledger
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("settings"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("settings")}
+                      disabled={!hasPermission(currentUser, "settingsView")}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Settings className="w-4 h-4" />
+                        Practice Settings
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => { setActiveView("studio"); setIsMobileSidebarOpen(false); }}
+                      className={getSidebarItemClass("studio")}
+                    >
+                      <span className="flex items-center gap-2.5 text-yellow-400">
+                        <Settings className="w-4 h-4 text-yellow-400" />
+                        Enterprise Studio
+                      </span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="border-t border-white/5 pt-4 text-xs text-white/50">
-                  Logged in: <span className="text-white font-medium">{currentUser.name}</span>
+                {/* Fixed Drawer Footer */}
+                <div className="p-3.5 border-t border-white/10 shrink-0 bg-[#07173D]">
+                  <div className="text-xs text-white/80 font-semibold truncate">{currentUser.name}</div>
+                  <div className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider">{currentUser.role === "OWNER" ? "MASTER ADMIN" : currentUser.role}</div>
                 </div>
               </motion.aside>
             </>

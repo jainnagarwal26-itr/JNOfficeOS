@@ -235,16 +235,16 @@ export default function AnalyticsCharts({
   const getMaxVal = (arr: number[]) => Math.max(...arr, 1);
 
   return (
-    <div className="bg-[#1F356B] border border-blue-900/35 p-6 rounded-3xl shadow-xl space-y-6">
+    <div className="bg-[#1F356B] border border-blue-900/35 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl shadow-xl space-y-4 sm:space-y-6 max-w-full overflow-hidden">
       
       {/* Visual Analytics Menu */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-blue-950/40 pb-4 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-blue-950/40 pb-4 gap-3 sm:gap-4">
         <div>
-          <h2 className="text-sm font-semibold tracking-wide text-[#D4AF37] uppercase">Visual Analytics & Business Intelligence</h2>
-          <p className="text-[11px] text-slate-400 mt-0.5">Real-time analytical representation of your accounting firm practice metrics</p>
+          <h2 className="text-xs sm:text-sm font-semibold tracking-wide text-[#D4AF37] uppercase">Visual Analytics & Business Intelligence</h2>
+          <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5">Real-time analytical representation of your accounting firm practice metrics</p>
         </div>
         
-        <div className="flex bg-blue-950/30 p-1 rounded-xl border border-blue-950/50">
+        <div className="flex flex-wrap bg-blue-950/40 p-1 rounded-xl border border-blue-950/50 gap-1 max-w-full">
           {[
             { id: "financial", label: "Financials", icon: Landmark },
             { id: "operations", label: "Operations", icon: BarChart3 },
@@ -256,9 +256,9 @@ export default function AnalyticsCharts({
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${activeTab === t.id ? "bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37]" : "text-slate-400 hover:text-white"}`}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold cursor-pointer transition-colors ${activeTab === t.id ? "bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37]" : "text-slate-400 hover:text-white"}`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span>{t.label}</span>
               </button>
             );
@@ -268,138 +268,145 @@ export default function AnalyticsCharts({
 
       {/* Render Dynamic Charts depending on Active tab */}
       {activeTab === "financial" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           
           {/* Chart 1: Revenue & Expense Trend (Bar + Trend Line) */}
-          <div className="bg-[#061026] p-5 rounded-2xl border border-blue-950/30">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Revenue by Month vs Expenses</span>
-            <div className="h-44 flex items-end justify-between gap-3 px-2 border-b border-blue-950/50 pb-2 relative">
-              {revenueByMonthData.map((d, idx) => {
-                const maxVal = getMaxVal([...revenueByMonthData.map(x => x.revenue), ...revenueByMonthData.map(x => x.expenses)]);
-                const revHeight = (d.revenue / maxVal) * 100;
-                const expHeight = (d.expenses / maxVal) * 100;
-                return (
-                  <div key={idx} className="flex-1 flex justify-center items-end gap-1.5 h-full relative group">
-                    {/* Revenue Bar */}
-                    <div 
-                      className="w-4 bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t-sm transition-all duration-500 group-hover:brightness-110 relative"
-                      style={{ height: `${Math.max(revHeight, 3)}%` }}
-                    >
-                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 border border-emerald-500/25 text-[9px] font-mono font-bold text-emerald-400 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
-                        ₹{Math.round(d.revenue/1000)}k
+          <div className="bg-[#061026] p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-blue-950/30 overflow-hidden">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Revenue by Month vs Expenses</span>
+            <div className="w-full overflow-x-auto scrollbar-none pb-2">
+              <div className="h-44 min-w-[260px] flex items-end justify-between gap-1.5 sm:gap-3 px-1 border-b border-blue-950/50 pb-2 relative">
+                {revenueByMonthData.map((d, idx) => {
+                  const maxVal = getMaxVal([...revenueByMonthData.map(x => x.revenue), ...revenueByMonthData.map(x => x.expenses)]);
+                  const revHeight = (d.revenue / maxVal) * 100;
+                  const expHeight = (d.expenses / maxVal) * 100;
+                  return (
+                    <div key={idx} className="flex-1 flex justify-center items-end gap-1 sm:gap-1.5 h-full relative group">
+                      {/* Revenue Bar */}
+                      <div 
+                        className="w-2.5 sm:w-4 bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t-sm transition-all duration-500 group-hover:brightness-110 relative"
+                        style={{ height: `${Math.max(revHeight, 3)}%` }}
+                      >
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 border border-emerald-500/25 text-[9px] font-mono font-bold text-emerald-400 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
+                          ₹{Math.round(d.revenue/1000)}k
+                        </div>
+                      </div>
+                      {/* Expense Bar */}
+                      <div 
+                        className="w-2.5 sm:w-4 bg-gradient-to-t from-rose-600 to-rose-400 rounded-t-sm transition-all duration-500 group-hover:brightness-110 relative"
+                        style={{ height: `${Math.max(expHeight, 3)}%` }}
+                      >
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 border border-rose-500/25 text-[9px] font-mono font-bold text-rose-400 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
+                          ₹{Math.round(d.expenses/1000)}k
+                        </div>
+                      </div>
+                      {/* Tooltip Overlay */}
+                      <div className="absolute bottom-0 text-[9px] sm:text-[10px] font-semibold text-slate-400 transform translate-y-6 whitespace-nowrap">
+                        {d.month.split("-")[1] === "07" ? "Jul" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
                       </div>
                     </div>
-                    {/* Expense Bar */}
-                    <div 
-                      className="w-4 bg-gradient-to-t from-rose-600 to-rose-400 rounded-t-sm transition-all duration-500 group-hover:brightness-110 relative"
-                      style={{ height: `${Math.max(expHeight, 3)}%` }}
-                    >
-                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 border border-rose-500/25 text-[9px] font-mono font-bold text-rose-400 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
-                        ₹{Math.round(d.expenses/1000)}k
-                      </div>
-                    </div>
-                    {/* Tooltip Overlay */}
-                    <div className="absolute bottom-0 text-[10px] font-semibold text-slate-400 transform translate-y-6">
-                      {d.month.split("-")[1] === "07" ? "Jul 26" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-center gap-4 mt-8 text-[10px] font-semibold">
-              <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm"></span><span className="text-slate-300">Revenue Billed</span></div>
-              <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-rose-500 rounded-sm"></span><span className="text-slate-300">Logged Expenses</span></div>
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4 mt-7 text-[9px] sm:text-[10px] font-semibold">
+              <div className="flex items-center gap-1"><span className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-emerald-500 rounded-sm"></span><span className="text-slate-300">Revenue Billed</span></div>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-rose-500 rounded-sm"></span><span className="text-slate-300">Logged Expenses</span></div>
             </div>
           </div>
 
           {/* Chart 2: Financial Year Trend (Accumulated Net Revenue Surplus) */}
-          <div className="bg-[#061026] p-5 rounded-2xl border border-blue-950/30">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Financial Year Profit Trend (Cumulative)</span>
-            <div className="h-44 flex items-end justify-between px-4 border-b border-blue-950/50 pb-2 relative">
-              {fyTrendData.map((d, idx) => {
-                const maxVal = getMaxVal(fyTrendData.map(x => x.revenue));
-                const heightPercent = (d.revenue / maxVal) * 100;
-                const marginPercent = ((d.revenue - d.expenses) / maxVal) * 100;
-                return (
-                  <div key={idx} className="flex-grow flex flex-col justify-end items-center h-full relative group">
-                    {/* Cumulative Revenue Line representation */}
-                    <div className="w-3 bg-[#D4AF37] rounded-t-sm" style={{ height: `${heightPercent}%` }}></div>
-                    {/* Cumulative Profit margin representation */}
-                    <div className="w-1.5 bg-cyan-400 absolute rounded-t-sm" style={{ height: `${marginPercent}%`, bottom: 0 }}></div>
-                    
-                    <div className="absolute -top-7 bg-slate-900 text-[9px] font-mono text-[#D4AF37] border border-[#D4AF37]/30 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      Margin: ₹{Math.round(d.margin/1000)}k
+          <div className="bg-[#061026] p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-blue-950/30 overflow-hidden">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Financial Year Profit Trend (Cumulative)</span>
+            <div className="w-full overflow-x-auto scrollbar-none pb-2">
+              <div className="h-44 min-w-[260px] flex items-end justify-between px-2 border-b border-blue-950/50 pb-2 relative">
+                {fyTrendData.map((d, idx) => {
+                  const maxVal = getMaxVal(fyTrendData.map(x => x.revenue));
+                  const heightPercent = (d.revenue / maxVal) * 100;
+                  const marginPercent = ((d.revenue - d.expenses) / maxVal) * 100;
+                  return (
+                    <div key={idx} className="flex-grow flex flex-col justify-end items-center h-full relative group">
+                      {/* Cumulative Revenue Line representation */}
+                      <div className="w-2.5 sm:w-3 bg-[#D4AF37] rounded-t-sm" style={{ height: `${heightPercent}%` }}></div>
+                      {/* Cumulative Profit margin representation */}
+                      <div className="w-1 sm:w-1.5 bg-cyan-400 absolute rounded-t-sm" style={{ height: `${marginPercent}%`, bottom: 0 }}></div>
+                      
+                      <div className="absolute -top-7 bg-slate-900 text-[9px] font-mono text-[#D4AF37] border border-[#D4AF37]/30 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap">
+                        Margin: ₹{Math.round(d.margin/1000)}k
+                      </div>
+                      
+                      <div className="absolute bottom-0 text-[9px] sm:text-[10px] font-semibold text-slate-400 transform translate-y-6">
+                        {d.month.split("-")[1] === "07" ? "Jul" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
+                      </div>
                     </div>
-                    
-                    <div className="absolute bottom-0 text-[10px] font-semibold text-slate-400 transform translate-y-6">
-                      {d.month.split("-")[1] === "07" ? "Jul" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-center gap-4 mt-8 text-[10px] font-semibold">
-              <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#D4AF37] rounded-sm"></span><span className="text-slate-300">Cumulative Revenue</span></div>
-              <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-cyan-400 rounded-sm"></span><span className="text-slate-300">Net Profit Margin</span></div>
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4 mt-7 text-[9px] sm:text-[10px] font-semibold">
+              <div className="flex items-center gap-1"><span className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-[#D4AF37] rounded-sm"></span><span className="text-slate-300">Cumulative Revenue</span></div>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-cyan-400 rounded-sm"></span><span className="text-slate-300">Net Profit Margin</span></div>
             </div>
           </div>
 
           {/* Chart 3: Daily Collections Trajectory */}
-          <div className="bg-[#061026] p-5 rounded-2xl border border-blue-950/30">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Daily Collections (Last 7 Days)</span>
-            <div className="h-44 flex items-end justify-between px-2 border-b border-blue-950/50 pb-2 relative">
-              {dailyCollectionsData.map((d, idx) => {
-                const maxVal = getMaxVal(dailyCollectionsData.map(x => x.amount));
-                const heightPercent = (d.amount / maxVal) * 100;
-                return (
-                  <div key={idx} className="flex-1 flex flex-col justify-end items-center h-full relative group">
-                    <div 
-                      className="w-6 bg-gradient-to-t from-teal-600 to-teal-400 rounded-t"
-                      style={{ height: `${Math.max(heightPercent, 2)}%` }}
-                    ></div>
-                    <div className="absolute -top-7 bg-slate-900 border border-teal-500/30 text-[9px] font-mono text-teal-400 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap">
-                      ₹{d.amount.toLocaleString("en-IN")}
+          <div className="bg-[#061026] p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-blue-950/30 overflow-hidden">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Daily Collections (Last 7 Days)</span>
+            <div className="w-full overflow-x-auto scrollbar-none pb-2">
+              <div className="h-44 min-w-[260px] flex items-end justify-between px-1 border-b border-blue-950/50 pb-2 relative">
+                {dailyCollectionsData.map((d, idx) => {
+                  const maxVal = getMaxVal(dailyCollectionsData.map(x => x.amount));
+                  const heightPercent = (d.amount / maxVal) * 100;
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col justify-end items-center h-full relative group">
+                      <div 
+                        className="w-4 sm:w-6 bg-gradient-to-t from-teal-600 to-teal-400 rounded-t"
+                        style={{ height: `${Math.max(heightPercent, 2)}%` }}
+                      ></div>
+                      <div className="absolute -top-7 bg-slate-900 border border-teal-500/30 text-[9px] font-mono text-teal-400 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap">
+                        ₹{d.amount.toLocaleString("en-IN")}
+                      </div>
+                      <div className="absolute bottom-0 text-[8px] font-semibold text-slate-400 transform translate-y-6 select-none whitespace-nowrap">
+                        {d.date.substring(5)}
+                      </div>
                     </div>
-                    <div className="absolute bottom-0 text-[8px] font-semibold text-slate-400 transform translate-y-6 select-none">
-                      {d.date.substring(5)}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-center mt-8 text-[10px] text-slate-400">
+            <div className="flex justify-center mt-7 text-[9px] sm:text-[10px] text-slate-400 text-center">
               Shows payment receipts captured day-by-day across all bank and UPI channels
             </div>
           </div>
 
           {/* Chart 4: Monthly Collections Volume */}
-          <div className="bg-[#061026] p-5 rounded-2xl border border-blue-950/30">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Monthly Collections (Inflow Volume)</span>
-            <div className="h-44 flex items-end justify-between px-4 border-b border-blue-950/50 pb-2 relative">
-              {monthlyCollectionsData.map((d, idx) => {
-                const maxVal = getMaxVal(monthlyCollectionsData.map(x => x.amount));
-                const heightPercent = (d.amount / maxVal) * 100;
-                return (
-                  <div key={idx} className="flex-grow flex flex-col justify-end items-center h-full relative group">
-                    <div 
-                      className="w-8 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t"
-                      style={{ height: `${Math.max(heightPercent, 3)}%` }}
-                    ></div>
-                    <div className="absolute -top-7 bg-slate-900 border border-cyan-500/30 text-[9px] font-mono text-cyan-300 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap">
-                      ₹{Math.round(d.amount/1000)}k
+          <div className="bg-[#061026] p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-blue-950/30 overflow-hidden">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-4">Monthly Collections (Inflow Volume)</span>
+            <div className="w-full overflow-x-auto scrollbar-none pb-2">
+              <div className="h-44 min-w-[260px] flex items-end justify-between px-2 border-b border-blue-950/50 pb-2 relative">
+                {monthlyCollectionsData.map((d, idx) => {
+                  const maxVal = getMaxVal(monthlyCollectionsData.map(x => x.amount));
+                  const heightPercent = (d.amount / maxVal) * 100;
+                  return (
+                    <div key={idx} className="flex-grow flex flex-col justify-end items-center h-full relative group">
+                      <div 
+                        className="w-5 sm:w-8 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t"
+                        style={{ height: `${Math.max(heightPercent, 3)}%` }}
+                      ></div>
+                      <div className="absolute -top-7 bg-slate-900 border border-cyan-500/30 text-[9px] font-mono text-cyan-300 px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap">
+                        ₹{Math.round(d.amount/1000)}k
+                      </div>
+                      <div className="absolute bottom-0 text-[9px] sm:text-[10px] font-semibold text-slate-400 transform translate-y-6">
+                        {d.month.split("-")[1] === "07" ? "Jul" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
+                      </div>
                     </div>
-                    <div className="absolute bottom-0 text-[10px] font-semibold text-slate-400 transform translate-y-6">
-                      {d.month.split("-")[1] === "07" ? "Jul" : d.month.split("-")[1] === "06" ? "Jun" : d.month.split("-")[1] === "05" ? "May" : d.month.split("-")[1] === "04" ? "Apr" : d.month.split("-")[1] === "03" ? "Mar" : "Feb"}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex justify-center mt-8 text-[10px] text-slate-400">
+            <div className="flex justify-center mt-7 text-[9px] sm:text-[10px] text-slate-400 text-center">
               Sum of actual client invoice receipts settled within respective monthly calendar windows
             </div>
           </div>
-
         </div>
       )}
 

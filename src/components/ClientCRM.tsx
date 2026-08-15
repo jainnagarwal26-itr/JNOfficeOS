@@ -107,9 +107,9 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
         const cleanDbClients = dbClients.filter(c => c.client_number !== "CL000004" && c.id !== "341ff4e5-62d5-42da-9d37-963d94bd6136" && c.id !== "9538d74a-9e34-468d-9662-ab58dfc42930");
         const mapped: Client[] = cleanDbClients.map(c => ({
           id: c.id,
-          clientNumber: c.client_number,
+          clientNumber: c.client_number || c.id || "CL000000",
           category: c.category || "Individual",
-          name: c.client_name,
+          name: c.name || c.client_name || c.business_name || "Client Profile",
           tradeName: c.trade_name || "",
           businessName: c.business_name || "",
           clientSource: c.client_source || "Direct",
@@ -151,13 +151,13 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
           financialYear: c.financial_year || "2026-27",
           assessmentYear: c.assessment_year || "2027-28",
           status: c.status || "Active",
-          tags: c.tags || [],
-          documents: {},
-          assignedStaff: [],
-          timeline: [],
+          tags: Array.isArray(c.tags) ? c.tags : [],
+          documents: c.documents || {},
+          assignedStaff: Array.isArray(c.assigned_staff) ? c.assigned_staff : [],
+          timeline: Array.isArray(c.timeline) ? c.timeline : [],
           internalNotes: c.internal_notes || "",
-          createdAt: c.created_at,
-          updatedAt: c.updated_at
+          createdAt: c.created_at || new Date().toISOString(),
+          updatedAt: c.updated_at || new Date().toISOString()
         }));
 
         setClients(mapped);
@@ -172,9 +172,9 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
     }
 
     const list = getClients();
-    setClients(list);
+    setClients(list || []);
     if (selectedClient) {
-      const refreshed = list.find(c => c.id === selectedClient.id || c.clientNumber === selectedClient.clientNumber);
+      const refreshed = (list || []).find(c => c.id === selectedClient.id || c.clientNumber === selectedClient.clientNumber);
       if (refreshed) setSelectedClient(refreshed);
     }
   };
@@ -205,7 +205,7 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
   const loadClientServices = async (clientId: string) => {
     setLoadingClientServices(true);
     const services = await serviceRepository.getClientServices(clientId);
-    setClientServices(services);
+    setClientServices(services || []);
     setLoadingClientServices(false);
   };
 
@@ -228,9 +228,9 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
     // Fetch categories and active services from Supabase
     const cats = await serviceRepository.getCategories();
     const srvs = await serviceRepository.getServices({ activeOnly: true });
-    setServiceCategories(cats);
-    setMasterServicesList(srvs);
-    if (cats.length > 0) setAssignCatId(cats[0].id);
+    setServiceCategories(cats || []);
+    setMasterServicesList(srvs || []);
+    if (cats && cats.length > 0) setAssignCatId(cats[0].id);
     setShowAddServiceModal(true);
   };
 
@@ -279,21 +279,31 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
     }
   };
 
-  // Filter clients based on search, filters and staff assignment
-  const filteredClients = clients.filter(c => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = 
-      c.id.toLowerCase().includes(s) ||
-      c.name.toLowerCase().includes(s) ||
-      c.pan.toLowerCase().includes(s) ||
-      c.gstin.toLowerCase().includes(s) ||
-      c.mobile.includes(s) ||
-      c.email.toLowerCase().includes(s);
+  // Filter clients based on search, filters and staff assignment (Safe Null-Coalescing)
+  const filteredClients = (clients || []).filter(c => {
+    if (!c) return false;
+    const s = (searchTerm || "").toLowerCase().trim();
+    const clientName = c.name || "";
+    const clientId = c.id || "";
+    const clientNumber = c.clientNumber || "";
+    const pan = c.pan || "";
+    const gstin = c.gstin || "";
+    const mobile = c.mobile || "";
+    const email = c.email || "";
+
+    const matchesSearch = !s || 
+      clientId.toLowerCase().includes(s) ||
+      clientNumber.toLowerCase().includes(s) ||
+      clientName.toLowerCase().includes(s) ||
+      pan.toLowerCase().includes(s) ||
+      gstin.toLowerCase().includes(s) ||
+      mobile.includes(s) ||
+      email.toLowerCase().includes(s);
 
     const matchesCategory = categoryFilter === "ALL" || c.category === categoryFilter;
     const matchesState = stateFilter === "ALL" || c.state === stateFilter;
     const matchesStatus = statusFilter === "ALL" || c.status === statusFilter;
-    const matchesTag = tagFilter === "ALL" || c.tags.includes(tagFilter);
+    const matchesTag = tagFilter === "ALL" || (Array.isArray(c.tags) && c.tags.includes(tagFilter));
 
     return matchesSearch && matchesCategory && matchesState && matchesStatus && matchesTag;
   });
