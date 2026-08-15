@@ -569,11 +569,12 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
     const sealHash = generateHashSync(`${inv.id}|${inv.date}|${inv.grandTotal}|${inv.clientName}|MyFirmSecureKey2026!`).substring(0, 8).toUpperCase();
 
-    // Extract the rendered QR Code SVGs from the DOM specifically (Shield icon is svg 0, Payment QR is svg 1, Seal QR is svg 2)
-    const printableEl = document.getElementById("printable_invoice_canvas");
-    const allSvgs = printableEl ? Array.from(printableEl.querySelectorAll("svg")) : [];
-    const paymentQrSvg = allSvgs.find(s => s.getAttribute("height") === "100" || s.parentElement?.parentElement?.textContent?.includes("Scan to Pay")) || allSvgs[1];
-    const sealQrSvg = allSvgs.find(s => s.getAttribute("height") === "72" || s.parentElement?.parentElement?.textContent?.includes("SEAL:")) || allSvgs[2] || allSvgs[allSvgs.length - 1];
+    // Extract the rendered QR Code SVGs from the DOM specifically using deterministic IDs
+    const paymentQrContainer = document.getElementById("invoice-payment-qr-container");
+    const sealQrContainer = document.getElementById("invoice-seal-qr-container");
+
+    const paymentQrSvg = paymentQrContainer ? paymentQrContainer.querySelector("svg") : null;
+    const sealQrSvg = sealQrContainer ? sealQrContainer.querySelector("svg") : null;
 
     const paymentQrHtml = paymentQrSvg ? paymentQrSvg.outerHTML : "";
     const sealQrHtml = sealQrSvg ? sealQrSvg.outerHTML : "";
@@ -588,17 +589,6 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 10.5px; line-height: 1.35; padding: 0; margin: 0; }
             .invoice-box { width: 720px; max-width: 720px; min-width: 720px; margin: 0 auto; background: #ffffff; padding: 16px 18px; box-sizing: border-box; overflow: hidden; }
-            .header-grid { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 14px; width: 100%; box-sizing: border-box; }
-            .firm-info { display: flex; align-items: flex-start; gap: 10px; width: 58%; max-width: 58%; box-sizing: border-box; }
-            .logo-box { width: 42px; height: 42px; border: 1px solid #f1f5f9; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-            .logo-img { width: 100%; height: 100%; object-fit: contain; }
-            .firm-title { font-size: 13.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px; }
-            .firm-subtitle { font-size: 8px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 1px; }
-            .firm-desc { font-size: 9px; color: #64748b; font-weight: 500; margin-top: 3px; line-height: 1.3; }
-            .firm-contact { font-size: 8.5px; color: #94a3b8; font-weight: 600; margin-top: 3px; }
-            .invoice-meta { width: 40%; max-width: 40%; text-align: right; box-sizing: border-box; }
-            .invoice-type { font-size: 17px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; }
-            .meta-box { display: inline-block; background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 6px; margin-top: 4px; text-align: left; font-size: 9px; width: 100%; box-sizing: border-box; }
             .details-grid { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 14px; margin-bottom: 14px; font-size: 9.5px; width: 100%; box-sizing: border-box; }
             .client-col { width: 58%; max-width: 58%; word-break: break-word; box-sizing: border-box; }
             .compliance-col { width: 40%; max-width: 40%; text-align: right; word-break: break-word; box-sizing: border-box; }
@@ -613,14 +603,6 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             .font-bold { font-weight: bold; }
             .font-black { font-weight: 900; }
             .words-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 9px; color: #334155; font-weight: bold; box-sizing: border-box; width: 100%; }
-            .footer-grid { display: flex; justify-content: space-between; border-top: 1px solid #cbd5e1; padding-top: 14px; margin-top: 6px; font-size: 9px; width: 100%; box-sizing: border-box; align-items: flex-start; }
-            .bank-col { width: 36%; max-width: 36%; box-sizing: border-box; }
-            .bank-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 8px; margin-top: 3px; font-size: 8.5px; line-height: 1.45; color: #475569; font-weight: bold; }
-            .qr-col { width: 28%; max-width: 28%; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; }
-            .qr-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px; display: inline-block; margin-top: 3px; }
-            .sign-col { width: 34%; max-width: 34%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; box-sizing: border-box; }
-            .seal-badge { font-size: 7px; color: #D4AF37; background: #f8fafc; border: 1px solid #e2e8f0; padding: 2.5px 5px; border-radius: 4px; font-weight: bold; margin-bottom: 6px; }
-            .sign-line { width: 110px; border-bottom: 1px dashed #94a3b8; margin-bottom: 3px; }
             .terms-box { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 14px; font-size: 7.5px; color: #94a3b8; line-height: 1.35; box-sizing: border-box; width: 100%; }
             @page { size: A4 portrait; margin: 10mm 12mm; }
             @media print {
@@ -631,49 +613,61 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
         </head>
         <body>
           <div class="invoice-box" id="invoice-capture-box">
-            <!-- 1. Header Banner -->
-            <div class="header-grid">
-              <div class="firm-info">
-                <div class="logo-box">
-                  <img src="/logo.jpeg" alt="Logo" class="logo-img" />
-                </div>
-                <div>
-                  <div class="firm-title">Jain Agarwal & Co.</div>
-                  <div class="firm-subtitle">TAX & FINANCIAL CONSULTANTS</div>
-                  <div class="firm-desc">
-                    Shop No. A6 & A7, Shree Sai Niketan CHS Ltd, Off Shriram Jewellers, Navghar Road, Bhayander East, Thane, Maharashtra 401105.
-                  </div>
-                  <div class="firm-contact">
-                    Website: www.jainnagarwal.in • Contact: +91 8828147889 • Email: jainnagarwal90@gmail.com
-                  </div>
-                </div>
-              </div>
-              <div class="invoice-meta">
-                <div class="invoice-type">${inv.type || "TAX INVOICE"}</div>
-                <div class="meta-box">
-                  <table style="width: 100%; border-collapse: collapse; border: none; font-size: 9px;">
-                    <tbody>
-                      <tr>
-                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Invoice Ref:</td>
-                        <td style="padding: 1.5px 0; border: none; font-weight: 800; color: #0D2C6C; font-family: monospace; text-align: right;">${inv.id}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Issue Date:</td>
-                        <td style="padding: 1.5px 0; border: none; font-weight: bold; color: #1e293b; text-align: right;">${inv.date}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Due Date:</td>
-                        <td style="padding: 1.5px 0; border: none; font-weight: bold; color: #e11d48; text-align: right;">${inv.dueDate}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Workflow ID:</td>
-                        <td style="padding: 1.5px 0; border: none; font-family: monospace; color: #64748b; font-weight: bold; text-align: right;">${inv.workflowId || "WF_SYNC_01"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <!-- 1. Header Banner (Pure HTML Table layout for 100% html2canvas rendering reliability) -->
+            <table style="width: 100%; border-collapse: collapse; border-bottom: 2px solid #0f172a; margin-bottom: 14px; padding-bottom: 14px;">
+              <tbody>
+                <tr>
+                  <td style="width: 58%; vertical-align: top; border: none; padding: 0 10px 14px 0;">
+                    <table style="width: 100%; border-collapse: collapse; border: none;">
+                      <tbody>
+                        <tr>
+                          <td style="width: 46px; vertical-align: top; border: none; padding-right: 10px;">
+                            <div style="width: 42px; height: 42px; border: 1px solid #f1f5f9; border-radius: 6px; overflow: hidden;">
+                              <img src="/logo.jpeg" alt="Logo" style="width: 100%; height: 100%; object-fit: contain;" />
+                            </div>
+                          </td>
+                          <td style="vertical-align: top; border: none;">
+                            <div style="font-size: 13.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px;">Jain Agarwal & Co.</div>
+                            <div style="font-size: 8px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px;">TAX & FINANCIAL CONSULTANTS</div>
+                            <div style="font-size: 9px; color: #64748b; font-weight: 500; margin-top: 3px; line-height: 1.3;">
+                              Shop No. A6 & A7, Shree Sai Niketan CHS Ltd, Off Shriram Jewellers, Navghar Road, Bhayander East, Thane, Maharashtra 401105.
+                            </div>
+                            <div style="font-size: 8.5px; color: #94a3b8; font-weight: 600; margin-top: 3px;">
+                              Website: www.jainnagarwal.in • Contact: +91 8828147889 • Email: jainnagarwal90@gmail.com
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                  <td style="width: 40%; vertical-align: top; text-align: right; border: none; padding: 0 0 14px 0;">
+                    <div style="font-size: 17px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">${inv.type || "TAX INVOICE"}</div>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; text-align: left; width: 100%; box-sizing: border-box;">
+                      <table style="width: 100%; border-collapse: collapse; border: none; font-size: 9px;">
+                        <tbody>
+                          <tr>
+                            <td style="padding: 2px 0; border: none; color: #475569; font-weight: 600; text-align: left; width: 45%;">Invoice Ref:</td>
+                            <td style="padding: 2px 0; border: none; font-weight: 800; color: #0D2C6C; font-family: monospace; text-align: right; width: 55%;">${inv.id}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 2px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Issue Date:</td>
+                            <td style="padding: 2px 0; border: none; font-weight: bold; color: #1e293b; text-align: right; width: 55%;">${inv.date}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 2px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Due Date:</td>
+                            <td style="padding: 2px 0; border: none; font-weight: bold; color: #e11d48; text-align: right; width: 55%;">${inv.dueDate}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 2px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Workflow ID:</td>
+                            <td style="padding: 2px 0; border: none; font-family: monospace; color: #64748b; font-weight: bold; text-align: right; width: 55%;">${inv.workflowId || "WF_SYNC_01"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
             <!-- 2. Client & Compliance Linkage -->
             <div class="details-grid">
@@ -833,39 +827,48 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               </div>
             ` : ""}
 
-            <!-- 6. Footer Grid (Bank Details, QR Code, Signature) -->
-            <div class="footer-grid avoid-break">
-              <div class="bank-col">
-                <div class="section-tag">OFFICIAL PRACTICE BANK DETAILS</div>
-                <div class="bank-card">
-                  <div>Bank Name: <span style="color: #1e293b;">AU SMALL FINANCE BANK</span></div>
-                  <div>Beneficiary: <span style="color: #1e293b;">JAIN AGARWAL & CO</span></div>
-                  <div>Account No: <span style="color: #1e293b; font-family: monospace;">2121245232324709</span></div>
-                  <div>IFSC Code: <span style="color: #1e293b; font-family: monospace;">AUBL0002452</span></div>
-                  <div>Branch Name: <span style="color: #1e293b;">Kharghar Mumbai</span></div>
-                  <div>UPI ID: <span style="color: #1e293b; font-family: monospace;">8828147889@okbizaxis</span></div>
-                </div>
-              </div>
+            <!-- 6. Footer Grid (Bank Details, QR Code, Signature) - Pure HTML Table -->
+            <table style="width: 100%; border-collapse: collapse; border-top: 1px solid #cbd5e1; margin-top: 6px; padding-top: 14px; font-size: 9px; margin-bottom: 10px;">
+              <tbody>
+                <tr>
+                  <!-- Bank Details -->
+                  <td style="width: 36%; vertical-align: top; border: none; padding-right: 10px;">
+                    <div style="font-size: 8px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px;">OFFICIAL PRACTICE BANK DETAILS</div>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 8px; font-size: 8.5px; line-height: 1.45; color: #475569; font-weight: bold;">
+                      <div>Bank Name: <span style="color: #1e293b;">AU SMALL FINANCE BANK</span></div>
+                      <div>Beneficiary: <span style="color: #1e293b;">JAIN AGARWAL & CO</span></div>
+                      <div>Account No: <span style="color: #1e293b; font-family: monospace;">2121245232324709</span></div>
+                      <div>IFSC Code: <span style="color: #1e293b; font-family: monospace;">AUBL0002452</span></div>
+                      <div>Branch Name: <span style="color: #1e293b;">Kharghar Mumbai</span></div>
+                      <div>UPI ID: <span style="color: #1e293b; font-family: monospace;">8828147889@okbizaxis</span></div>
+                    </div>
+                  </td>
 
-              <div class="qr-col">
-                <div class="section-tag" style="color: #0D2C6C;">SCAN TO PAY (GPAY/UPI)</div>
-                <div class="qr-card">
-                  ${paymentQrHtml || `<div style="width: 75px; height: 75px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #94a3b8;">UPI QR</div>`}
-                  <div style="font-size: 7px; color: #64748b; font-weight: bold; margin-top: 2px;">8828147889@okbizaxis</div>
-                </div>
-              </div>
+                  <!-- Payment QR -->
+                  <td style="width: 28%; vertical-align: top; text-align: center; border: none; padding: 0 5px;">
+                    <div style="font-size: 8px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; text-align: center;">SCAN TO PAY (GPAY/UPI)</div>
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px; display: inline-block;">
+                      ${paymentQrHtml || `<div style="width: 75px; height: 75px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #94a3b8;">UPI QR</div>`}
+                      <div style="font-size: 7px; color: #64748b; font-weight: bold; margin-top: 2px; text-align: center;">8828147889@okbizaxis</div>
+                    </div>
+                  </td>
 
-              <div class="sign-col">
-                <div class="seal-badge">🛡️ Digitally Verified & Authenticated</div>
-                <div style="margin-top: 3px; text-align: right;">
-                  ${sealQrHtml ? `<div style="display: inline-block; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px; margin-bottom: 2px;">${sealQrHtml}</div>` : ""}
-                  <div style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-bottom: 4px;">SEAL: ${sealHash}</div>
-                  <div class="sign-line" style="width: 110px; border-bottom: 1px dashed #94a3b8; margin-left: auto; margin-bottom: 3px;"></div>
-                  <div style="font-size: 8.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px;">Jain Agarwal & Co.</div>
-                  <div style="font-size: 7px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
-                </div>
-              </div>
-            </div>
+                  <!-- Authorized Signatory -->
+                  <td style="width: 36%; vertical-align: top; text-align: right; border: none; padding-left: 10px;">
+                    <div style="display: inline-block; padding: 2.5px 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 7px; font-weight: bold; color: #D4AF37; margin-bottom: 5px;">
+                      🛡️ Digitally Verified & Authenticated
+                    </div>
+                    <div style="text-align: right; margin-top: 3px;">
+                      ${sealQrHtml ? `<div style="display: inline-block; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px; margin-bottom: 3px;">${sealQrHtml}</div>` : ""}
+                      <div style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-bottom: 6px;">SEAL: ${sealHash}</div>
+                      <div style="width: 120px; border-bottom: 1px dashed #94a3b8; margin-left: auto; margin-bottom: 4px;"></div>
+                      <div style="font-size: 8.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px;">Jain Agarwal & Co.</div>
+                      <div style="font-size: 7.5px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
             <!-- 7. Terms & Conditions -->
             <div class="terms-box avoid-break">
@@ -2852,7 +2855,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                   {/* Payment QR Code */}
                   <div className="space-y-2 flex flex-col items-center justify-center border-y md:border-y-0 md:border-l md:border-r border-slate-100 py-4 md:py-0 px-4">
                     <span className="block text-[8px] font-black text-[#0D2C6C] uppercase tracking-widest text-center">Scan to Pay (GPay/PhonePe/Paytm)</span>
-                    <div className="bg-white p-2 border border-[#D4AF37]/30 rounded-xl shadow-sm flex flex-col items-center justify-center mt-1">
+                    <div id="invoice-payment-qr-container" className="bg-white p-2 border border-[#D4AF37]/30 rounded-xl shadow-sm flex flex-col items-center justify-center mt-1">
                       <QRCodeSVG 
                         value={`upi://pay?pa=8828147889@okbizaxis&pn=JAIN%20AGARWAL%20%26%20CO&am=${viewInvoice.grandTotal}&cu=INR&tn=Invoice%20${viewInvoice.id}`}
                         size={100}
@@ -2874,7 +2877,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                     <div className="text-center md:text-right space-y-1.5 pt-4 flex flex-col items-center md:items-end">
                       {/* Secure QR Code Seal */}
                       {viewInvoice && (
-                        <div className="mb-2 p-1.5 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col items-center justify-center">
+                        <div id="invoice-seal-qr-container" className="mb-2 p-1.5 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col items-center justify-center">
                           <QRCodeSVG 
                             value={`--- JAIN AGARWAL & CO. OFFICIAL TAX INVOICE VERIFICATION ---
 Invoice Ref: ${viewInvoice.id}
