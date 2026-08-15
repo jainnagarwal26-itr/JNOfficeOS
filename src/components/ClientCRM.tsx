@@ -10,7 +10,7 @@ import {
   Upload, Download, Tag, FileText, ChevronRight, Info, Lock, 
   Unlock, Clock, ArrowLeft, Check, FileSpreadsheet, Share2, 
   Building2, Briefcase, MapPin, CreditCard, Globe, Activity, FileCheck, Eye, EyeOff, XCircle,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, RefreshCw
 } from "lucide-react";
 import { User, UserRole, Client, ClientDocument, ClientTimelineEvent } from "../types";
 import { getClients, saveClients, getNextClientId, getUsers, addAuditLog, getSettings } from "../lib/db";
