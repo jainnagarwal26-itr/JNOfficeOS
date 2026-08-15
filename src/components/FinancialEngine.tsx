@@ -17,6 +17,7 @@ import { generateHashSync } from "../lib/hash";
 import { getClients, getServices, getUsers, getWorkflows } from "../lib/db";
 import { CaseRepository } from "../lib/repository";
 import { FinancialRepository, Invoice, InvoiceItem, InvoiceReceipt, ClientLedgerEntry } from "../lib/financialRepository";
+import { numberToWords } from "../lib/numberToWords";
 import { hasPermission } from "../lib/permissions";
 import { WorkspaceLayout } from "./WorkspaceLayout";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ModalFramework";
@@ -240,17 +241,17 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       }
     }
 
-    setInvoiceItems(inv.items.map(item => ({
-      serviceName: item.serviceName,
-      description: item.description,
-      quantity: item.quantity,
-      rate: item.rate,
-      discount: item.discount,
-      gstRate: item.gstRate,
-      cgst: item.cgst,
-      sgst: item.sgst,
-      igst: item.igst,
-      cess: item.cess
+    setInvoiceItems((inv.items || []).map(item => ({
+      serviceName: item.serviceName || "Service Item",
+      description: item.description || "",
+      quantity: Number(item.quantity || 1),
+      rate: Number(item.rate ?? 0),
+      discount: Number(item.discount ?? 0),
+      gstRate: Number(item.gstRate ?? 0),
+      cgst: Number(item.cgst ?? 0),
+      sgst: Number(item.sgst ?? 0),
+      igst: Number(item.igst ?? 0),
+      cess: Number(item.cess ?? 0)
     })));
 
     setIsCreateModalOpen(true);
@@ -370,7 +371,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       });
 
       if (editingInvoiceId) {
-        FinancialRepository.updateInvoice(editingInvoiceId, {
+        const updateRes = await FinancialRepository.updateInvoiceAsync(editingInvoiceId, {
           customInvoiceNumber: customInvoiceNumber.trim(),
           type: invoiceType,
           caseId,
@@ -388,6 +389,21 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           walkInMobile: clientId === "walk-in" ? walkInMobile.trim() : undefined,
           walkInGstin: clientId === "walk-in" ? walkInGstin.trim() : undefined
         }, currentUser);
+
+        if (!updateRes.success) {
+          alert(`Invoice Update Failed: ${updateRes.error || "Could not update invoice in PostgreSQL database."}`);
+          setIsSubmittingInvoice(false);
+          return;
+        }
+
+        onAddAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "FINANCIAL_INVOICE_UPDATED",
+          "DATABASE",
+          `Updated ${invoiceType} '${customInvoiceNumber.trim() || editingInvoiceId}' for Client ${clientName}.`
+        );
       } else {
         const res = await FinancialRepository.createInvoiceAsync({
           type: invoiceType,
@@ -2227,50 +2243,68 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-[10px] font-medium text-slate-700">
-                      {viewInvoice.items.map((item, idx) => {
-                        const hasIgst = item.igst > 0;
-                        return (
-                          <tr key={idx}>
-                            <td className="p-2.5 border border-slate-200 font-bold">{idx + 1}</td>
-                            <td className="p-2.5 border border-slate-200">
-                              <div className="font-bold text-slate-800">{item.serviceName}</div>
-                              <div className="text-[9px] text-slate-400 font-medium mt-0.5 leading-relaxed">{item.description}</div>
-                            </td>
-                            <td className="p-2.5 border border-slate-200 text-center font-bold">{item.quantity}</td>
-                            <td className="p-2.5 border border-slate-200 text-right font-semibold">₹{item.rate.toLocaleString("en-IN")}</td>
-                            <td className="p-2.5 border border-slate-200 text-right font-semibold">₹{item.taxableValue.toLocaleString("en-IN")}</td>
-                            <td className="p-2.5 border border-slate-200 text-right font-semibold">
-                              {!hasIgst ? `${(item.gstRate / 2)}%` : "-"}
-                              <span className="block text-[8px] text-slate-400 font-semibold">{!hasIgst ? `₹${item.cgst.toLocaleString("en-IN")}` : ""}</span>
-                            </td>
-                            <td className="p-2.5 border border-slate-200 text-right font-semibold">
-                              {!hasIgst ? `${(item.gstRate / 2)}%` : "-"}
-                              <span className="block text-[8px] text-slate-400 font-semibold">{!hasIgst ? `₹${item.sgst.toLocaleString("en-IN")}` : ""}</span>
-                            </td>
-                            <td className="p-2.5 border border-slate-200 text-right font-semibold">
-                              {hasIgst ? `${item.gstRate}%` : "-"}
-                              <span className="block text-[8px] text-slate-400 font-semibold">{hasIgst ? `₹${item.igst.toLocaleString("en-IN")}` : ""}</span>
-                            </td>
-                            <td className="p-2.5 border border-slate-200 text-right font-black text-slate-800">
-                              ₹{item.total.toLocaleString("en-IN")}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {viewInvoice.items && viewInvoice.items.length > 0 ? (
+                        viewInvoice.items.map((item, idx) => {
+                          const hasIgst = (item.igst || 0) > 0;
+                          const itemQty = item.quantity || 1;
+                          const itemRate = item.rate || 0;
+                          const itemTaxable = item.taxableValue !== undefined ? item.taxableValue : (itemQty * itemRate);
+                          const itemCgst = item.cgst || 0;
+                          const itemSgst = item.sgst || 0;
+                          const itemIgst = item.igst || 0;
+                          const itemTotal = item.total !== undefined ? item.total : (itemTaxable + itemCgst + itemSgst + itemIgst);
+
+                          return (
+                            <tr key={idx}>
+                              <td className="p-2.5 border border-slate-200 font-bold">{idx + 1}</td>
+                              <td className="p-2.5 border border-slate-200">
+                                <div className="font-bold text-slate-800">{item.serviceName || "Service Item"}</div>
+                                {item.description && (
+                                  <div className="text-[9px] text-slate-400 font-medium mt-0.5 leading-relaxed">{item.description}</div>
+                                )}
+                              </td>
+                              <td className="p-2.5 border border-slate-200 text-center font-bold">{itemQty}</td>
+                              <td className="p-2.5 border border-slate-200 text-right font-semibold">₹{itemRate.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5 border border-slate-200 text-right font-semibold">₹{itemTaxable.toLocaleString("en-IN")}</td>
+                              <td className="p-2.5 border border-slate-200 text-right font-semibold">
+                                {!hasIgst && (item.gstRate || 0) > 0 ? `${((item.gstRate || 0) / 2)}%` : "-"}
+                                <span className="block text-[8px] text-slate-400 font-semibold">{!hasIgst && itemCgst > 0 ? `₹${itemCgst.toLocaleString("en-IN")}` : ""}</span>
+                              </td>
+                              <td className="p-2.5 border border-slate-200 text-right font-semibold">
+                                {!hasIgst && (item.gstRate || 0) > 0 ? `${((item.gstRate || 0) / 2)}%` : "-"}
+                                <span className="block text-[8px] text-slate-400 font-semibold">{!hasIgst && itemSgst > 0 ? `₹${itemSgst.toLocaleString("en-IN")}` : ""}</span>
+                              </td>
+                              <td className="p-2.5 border border-slate-200 text-right font-semibold">
+                                {hasIgst && (item.gstRate || 0) > 0 ? `${item.gstRate}%` : "-"}
+                                <span className="block text-[8px] text-slate-400 font-semibold">{hasIgst && itemIgst > 0 ? `₹${itemIgst.toLocaleString("en-IN")}` : ""}</span>
+                              </td>
+                              <td className="p-2.5 border border-slate-200 text-right font-black text-slate-800">
+                                ₹{itemTotal.toLocaleString("en-IN")}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={9} className="p-4 text-center text-slate-400 font-medium italic">
+                            No service line items recorded for this invoice.
+                          </td>
+                        </tr>
+                      )}
 
                       {/* Calculations breakdown block */}
                       <tr className="bg-slate-50/50">
                         <td colSpan={7} className="p-3 font-bold text-slate-500 text-right uppercase border border-slate-200">Gross Total Base Billed:</td>
                         <td colSpan={2} className="p-3 text-right font-black text-slate-800 border border-slate-200 text-[11px]">
-                          ₹{viewInvoice.subTotal.toLocaleString("en-IN")}
+                          ₹{(viewInvoice.subTotal ?? 0).toLocaleString("en-IN")}
                         </td>
                       </tr>
 
-                      {viewInvoice.discountAmount > 0 && (
+                      {(viewInvoice.discountAmount || 0) > 0 && (
                         <tr>
                           <td colSpan={7} className="p-3 font-bold text-slate-500 text-right uppercase border border-slate-200 text-rose-600">Discount Reduction:</td>
                           <td colSpan={2} className="p-3 text-right font-black text-rose-600 border border-slate-200 text-[11px]">
-                            - ₹{viewInvoice.discountAmount.toLocaleString("en-IN")}
+                            - ₹{(viewInvoice.discountAmount || 0).toLocaleString("en-IN")}
                           </td>
                         </tr>
                       )}
@@ -2278,42 +2312,42 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                       <tr className="bg-slate-50/50">
                         <td colSpan={7} className="p-3 font-bold text-slate-500 text-right uppercase border border-slate-200">Total Taxable Value (Net):</td>
                         <td colSpan={2} className="p-3 text-right font-black text-[#0D2C6C] border border-slate-200 text-[11px]">
-                          ₹{viewInvoice.taxableAmount.toLocaleString("en-IN")}
+                          ₹{(viewInvoice.taxableAmount ?? viewInvoice.subTotal ?? 0).toLocaleString("en-IN")}
                         </td>
                       </tr>
 
-                      {viewInvoice.cgstAmount > 0 && (
+                      {(viewInvoice.cgstAmount || 0) > 0 && (
                         <tr>
                           <td colSpan={7} className="p-2 font-bold text-slate-500 text-right uppercase border border-slate-200">Central Tax (CGST):</td>
                           <td colSpan={2} className="p-2 text-right font-bold text-slate-700 border border-slate-200">
-                            ₹{viewInvoice.cgstAmount.toLocaleString("en-IN")}
+                            ₹{(viewInvoice.cgstAmount || 0).toLocaleString("en-IN")}
                           </td>
                         </tr>
                       )}
 
-                      {viewInvoice.sgstAmount > 0 && (
+                      {(viewInvoice.sgstAmount || 0) > 0 && (
                         <tr>
                           <td colSpan={7} className="p-2 font-bold text-slate-500 text-right uppercase border border-slate-200">State Tax (SGST):</td>
                           <td colSpan={2} className="p-2 text-right font-bold text-slate-700 border border-slate-200">
-                            ₹{viewInvoice.sgstAmount.toLocaleString("en-IN")}
+                            ₹{(viewInvoice.sgstAmount || 0).toLocaleString("en-IN")}
                           </td>
                         </tr>
                       )}
 
-                      {viewInvoice.igstAmount > 0 && (
+                      {(viewInvoice.igstAmount || 0) > 0 && (
                         <tr>
                           <td colSpan={7} className="p-2 font-bold text-slate-500 text-right uppercase border border-slate-200">Integrated Tax (IGST):</td>
                           <td colSpan={2} className="p-2 text-right font-bold text-slate-700 border border-slate-200">
-                            ₹{viewInvoice.igstAmount.toLocaleString("en-IN")}
+                            ₹{(viewInvoice.igstAmount || 0).toLocaleString("en-IN")}
                           </td>
                         </tr>
                       )}
 
-                      {viewInvoice.roundOff !== 0 && (
+                      {(viewInvoice.roundOff || 0) !== 0 && (
                         <tr>
                           <td colSpan={7} className="p-2 font-bold text-slate-400 text-right uppercase border border-slate-200">Rounding Adjustments:</td>
                           <td colSpan={2} className="p-2 text-right text-slate-500 border border-slate-200">
-                            ₹{viewInvoice.roundOff.toFixed(2)}
+                            ₹{(viewInvoice.roundOff || 0).toFixed(2)}
                           </td>
                         </tr>
                       )}
@@ -2321,7 +2355,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                       <tr className="bg-[#0D2C6C]/5">
                         <td colSpan={7} className="p-4 font-black text-[#0D2C6C] text-right uppercase border border-slate-200 text-xs">Grand Outstanding Total:</td>
                         <td colSpan={2} className="p-4 text-right font-black text-[#0D2C6C] border border-slate-200 text-xs">
-                          ₹{viewInvoice.grandTotal.toLocaleString("en-IN")}
+                          ₹{(viewInvoice.grandTotal ?? 0).toLocaleString("en-IN")}
                         </td>
                       </tr>
                     </tbody>
@@ -2331,7 +2365,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 {/* 4. Amount in Words */}
                 <div className="bg-slate-50 p-4.5 rounded-xl border border-slate-100 text-[10px] text-slate-700 font-bold">
                   <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount in Words</span>
-                  <span>{viewInvoice.amountInWords}</span>
+                  <span>{viewInvoice.amountInWords || numberToWords(viewInvoice.grandTotal ?? 0)}</span>
                 </div>
 
                 {/* 5. Payments History Log */}

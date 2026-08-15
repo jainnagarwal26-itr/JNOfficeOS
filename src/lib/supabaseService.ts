@@ -583,57 +583,8 @@ export class SupabaseService {
   async getInvoices(): Promise<{ success: boolean; data?: any[]; error?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
     try {
-      const { data, error } = await supabase
-        .from("jn_invoices")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      const statusReverseMap: Record<string, string> = {
-        "PAID": "Paid",
-        "UNPAID": "Unpaid",
-        "PARTIALLY_PAID": "Partially Paid",
-        "OVERDUE": "Overdue",
-        "CANCELLED": "Cancelled"
-      };
-
-      const mapped = (data || []).map((row: any) => ({
-        id: row.invoice_number,
-        type: "Tax Invoice",
-        caseId: "",
-        clientId: row.client_id || "",
-        clientName: row.client_name,
-        serviceId: "",
-        serviceName: "Professional Advisory Services",
-        assignedStaffIds: ["usr_owner_001"],
-        date: row.invoice_date,
-        dueDate: row.due_date,
-        subTotal: Number(row.sub_total || 0),
-        cgstTotal: Number(row.cgst_amount || 0),
-        sgstTotal: Number(row.sgst_amount || 0),
-        igstTotal: Number(row.igst_amount || 0),
-        cessTotal: 0,
-        totalDiscount: 0,
-        roundOff: 0,
-        grandTotal: Number(row.total_amount || 0),
-        status: statusReverseMap[row.status] || row.status || "Unpaid",
-        items: [],
-        payments: Number(row.amount_paid || 0) > 0 ? [{
-          id: `REC_${row.invoice_number}`,
-          invoiceId: row.invoice_number,
-          date: row.invoice_date,
-          amount: Number(row.amount_paid),
-          mode: "Bank Transfer",
-          createdAt: row.created_at
-        }] : [],
-        notes: row.notes || "",
-        termsConditions: row.terms || "",
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-      }));
-
-      return { success: true, data: mapped };
+      const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+      return await CentralInvoiceRepository.getInvoices();
     } catch (err: any) {
       console.error("[SupabaseService] getInvoices error:", err);
       return { success: false, error: err.message };

@@ -37,6 +37,7 @@ export interface InvoiceReceipt {
 
 export interface Invoice {
   id: string; // JNA/YYYY-YY/000001
+  uuid?: string; // Canonical Supabase UUID
   type: "Tax Invoice" | "Bill of Supply" | "Proforma Invoice" | "Credit Note" | "Debit Note" | "Receipt Voucher" | "Payment Voucher";
   caseId: string;
   clientId: string;
@@ -277,14 +278,14 @@ export class FinancialRepository {
   public static async getInvoicesAsync(currentUser: User): Promise<Invoice[]> {
     this.init();
     try {
-      const { supabaseService } = await import("./supabaseService");
-      const res = await supabaseService.getInvoices();
+      const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+      const res = await CentralInvoiceRepository.getInvoices();
       if (res.success && Array.isArray(res.data)) {
         this.invoicesCache = res.data;
         localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(this.invoicesCache));
       }
     } catch (e) {
-      console.error("[FinancialRepository] Error fetching live invoices from Supabase", e);
+      console.error("[FinancialRepository] Error fetching live invoices from CentralInvoiceRepository:", e);
     }
     return this.getInvoices(currentUser);
   }
@@ -690,6 +691,130 @@ export class FinancialRepository {
     );
 
     return updatedInvoice;
+  }
+
+  public static async updateInvoiceAsync(
+    id: string,
+    updates: Partial<Omit<Invoice, "createdAt" | "amountInWords" | "payments">> & { customInvoiceNumber?: string },
+    currentUser: User
+  ): Promise<{ success: boolean; invoice?: Invoice; error?: string }> {
+    this.init();
+
+    if (currentUser.role !== UserRole.OWNER && !currentUser.permissions.invoiceCreate) {
+      return { success: false, error: "Access Denied: You do not have permission to modify invoices." };
+    }
+
+    const index = this.invoicesCache.findIndex(inv => inv.id === id);
+    const existing = index !== -1 ? this.invoicesCache[index] : null;
+    const newId = (currentUser.role === UserRole.OWNER && updates.customInvoiceNumber && updates.customInvoiceNumber.trim()) 
+      ? updates.customInvoiceNumber.trim() 
+      : (existing ? existing.id : id);
+
+    let itemsWithTotals = updates.items || (existing ? existing.items : []);
+    let subTotal = 0;
+    let discountAmount = updates.discountAmount !== undefined ? updates.discountAmount : (existing ? existing.discountAmount : 0);
+    let cgstSum = 0;
+    let sgstSum = 0;
+    let igstSum = 0;
+    let cessSum = 0;
+
+    itemsWithTotals = itemsWithTotals.map(item => {
+      const taxableValue = parseFloat((item.quantity * item.rate - item.discount).toFixed(2));
+      const cgst = parseFloat(item.cgst.toFixed(2));
+      const sgst = parseFloat(item.sgst.toFixed(2));
+      const igst = parseFloat(item.igst.toFixed(2));
+      const cess = parseFloat((item.cess || 0).toFixed(2));
+      const total = parseFloat((taxableValue + cgst + sgst + igst + cess).toFixed(2));
+
+      subTotal += item.quantity * item.rate;
+      cgstSum += cgst;
+      sgstSum += sgst;
+      igstSum += igst;
+      cessSum += cess;
+
+      return {
+        ...item,
+        taxableValue,
+        total
+      };
+    });
+
+    const parsedSubTotal = parseFloat(subTotal.toFixed(2));
+    const parsedTaxableAmount = parseFloat((subTotal - discountAmount).toFixed(2));
+    const rawGrandTotal = parsedTaxableAmount + cgstSum + sgstSum + igstSum + cessSum;
+    const grandTotal = Math.round(rawGrandTotal);
+    const roundOff = parseFloat((grandTotal - rawGrandTotal).toFixed(2));
+    const amountInWords = numberToWords(grandTotal);
+
+    // Call CentralInvoiceRepository
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    const centralRes = await CentralInvoiceRepository.updateInvoice(id, {
+      newInvoiceNumber: newId,
+      clientId: updates.clientId !== undefined ? updates.clientId : existing?.clientId,
+      clientName: updates.clientName !== undefined ? updates.clientName : existing?.clientName,
+      clientAddress: updates.walkInAddress,
+      clientGstin: updates.walkInGstin,
+      invoiceDate: updates.date !== undefined ? updates.date : existing?.date,
+      dueDate: updates.dueDate !== undefined ? updates.dueDate : existing?.dueDate,
+      subTotal: parsedSubTotal,
+      cgstAmount: parseFloat(cgstSum.toFixed(2)),
+      sgstAmount: parseFloat(sgstSum.toFixed(2)),
+      igstAmount: parseFloat(igstSum.toFixed(2)),
+      gstAmount: parseFloat((cgstSum + sgstSum + igstSum).toFixed(2)),
+      totalAmount: grandTotal,
+      notes: itemsWithTotals.map(i => i.description).filter(Boolean).join("; ") || "",
+      items: itemsWithTotals.map(item => ({
+        serviceName: item.serviceName,
+        quantity: item.quantity,
+        unitPrice: item.rate,
+        taxableAmount: item.taxableValue,
+        gstRate: item.gstRate,
+        gstAmount: item.cgst + item.sgst + item.igst,
+        totalAmount: item.total
+      }))
+    });
+
+    if (!centralRes.success) {
+      return { success: false, error: centralRes.error || "Failed to update invoice in PostgreSQL database." };
+    }
+
+    const updatedInvoice: Invoice = centralRes.invoice || {
+      ...(existing || {} as any),
+      ...updates,
+      id: newId,
+      subTotal: parsedSubTotal,
+      discountAmount,
+      taxableAmount: parsedTaxableAmount,
+      cgstAmount: parseFloat(cgstSum.toFixed(2)),
+      sgstAmount: parseFloat(sgstSum.toFixed(2)),
+      igstAmount: parseFloat(igstSum.toFixed(2)),
+      cessAmount: parseFloat(cessSum.toFixed(2)),
+      roundOff,
+      grandTotal,
+      amountInWords,
+      items: itemsWithTotals,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (index !== -1) {
+      this.invoicesCache[index] = updatedInvoice;
+    } else {
+      this.invoicesCache.unshift(updatedInvoice);
+    }
+    this.persist();
+
+    this.syncInvoiceToCase(updatedInvoice, currentUser);
+
+    addAuditLog(
+      currentUser.email,
+      currentUser.name,
+      currentUser.role,
+      "INVOICE_UPDATED",
+      "DATABASE",
+      `Enterprise Invoice '${newId}' (${updatedInvoice.type}) updated for Client '${updatedInvoice.clientName}'.`
+    );
+
+    return { success: true, invoice: updatedInvoice };
   }
 
   public static cancelInvoice(id: string, currentUser: User): Invoice {

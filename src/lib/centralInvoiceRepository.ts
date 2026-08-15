@@ -6,6 +6,8 @@
 
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { getClients, addAuditLog } from "./db";
+import { Invoice, InvoiceItem } from "./financialRepository";
+import { numberToWords } from "./numberToWords";
 
 export interface CreateCentralInvoicePayload {
   clientId?: string | null; // Canonical UUID or client_number (will resolve to UUID)
@@ -38,7 +40,163 @@ export interface CreateCentralInvoicePayload {
   }>;
 }
 
+/**
+ * Canonical Normalizer: PostgreSQL (jn_invoices + jn_invoice_items) -> Frontend Invoice Contract
+ */
+export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice {
+  const statusReverseMap: Record<string, "Unpaid" | "Partially Paid" | "Paid" | "Cancelled" | "Refunded"> = {
+    "PAID": "Paid",
+    "UNPAID": "Unpaid",
+    "PARTIALLY_PAID": "Partially Paid",
+    "OVERDUE": "Unpaid",
+    "CANCELLED": "Cancelled",
+    "REFUNDED": "Refunded"
+  };
+
+  const isInterState = Number(row.igst_amount || 0) > 0;
+
+  const normalizedItems: InvoiceItem[] = (itemsRaw || []).map((it: any, idx: number) => {
+    const qty = Number(it.quantity || 1);
+    const unitPrice = Number(it.unit_price ?? it.rate ?? 0);
+    const taxableVal = Number(it.taxable_amount ?? (qty * unitPrice));
+    const gstRate = Number(it.gst_rate ?? 0);
+    const gstAmount = Number(it.gst_amount ?? ((taxableVal * gstRate) / 100));
+    const totalAmount = Number(it.total_amount ?? (taxableVal + gstAmount));
+
+    const cgst = (!isInterState && gstRate > 0) ? (gstAmount / 2) : 0;
+    const sgst = (!isInterState && gstRate > 0) ? (gstAmount / 2) : 0;
+    const igst = (isInterState && gstRate > 0) ? gstAmount : 0;
+
+    return {
+      id: it.id || `item_${idx + 1}`,
+      serviceName: it.service_name || "Professional Services",
+      description: it.sac_code ? `SAC: ${it.sac_code}` : (it.description || ""),
+      quantity: qty,
+      rate: unitPrice,
+      discount: 0,
+      taxableValue: parseFloat(taxableVal.toFixed(2)),
+      gstRate: gstRate,
+      cgst: parseFloat(cgst.toFixed(2)),
+      sgst: parseFloat(sgst.toFixed(2)),
+      igst: parseFloat(igst.toFixed(2)),
+      cess: 0,
+      total: parseFloat(totalAmount.toFixed(2))
+    };
+  });
+
+  const subTotal = Number(row.sub_total ?? 0);
+  const totalAmount = Number(row.total_amount ?? 0);
+  const cgstAmount = Number(row.cgst_amount ?? 0);
+  const sgstAmount = Number(row.sgst_amount ?? 0);
+  const igstAmount = Number(row.igst_amount ?? 0);
+  const amountPaid = Number(row.amount_paid ?? 0);
+
+  return {
+    id: row.invoice_number,
+    uuid: row.id,
+    type: "Tax Invoice",
+    caseId: row.source_reference_id || "",
+    clientId: row.client_id || (row.client_name ? "walk-in" : ""),
+    clientName: row.client_name || "Client",
+    serviceId: normalizedItems[0]?.id || "",
+    serviceName: normalizedItems[0]?.serviceName || "Professional Advisory Services",
+    assignedStaffIds: ["usr_owner_001"],
+    workflowId: undefined,
+    date: row.invoice_date || new Date().toISOString().split("T")[0],
+    dueDate: row.due_date || row.invoice_date || new Date().toISOString().split("T")[0],
+    subTotal: subTotal,
+    discountAmount: 0,
+    taxableAmount: subTotal > 0 ? subTotal : totalAmount,
+    cgstAmount: cgstAmount,
+    sgstAmount: sgstAmount,
+    igstAmount: igstAmount,
+    cessAmount: 0,
+    roundOff: 0,
+    grandTotal: totalAmount,
+    amountInWords: numberToWords(totalAmount),
+    status: statusReverseMap[row.status] || "Unpaid",
+    items: normalizedItems,
+    payments: amountPaid > 0 ? [{
+      id: `REC_${row.invoice_number}`,
+      invoiceId: row.invoice_number,
+      date: row.invoice_date,
+      amount: amountPaid,
+      mode: "Bank Transfer",
+      createdAt: row.created_at
+    }] : [],
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString(),
+    walkInAddress: row.client_address || "",
+    walkInMobile: "",
+    walkInGstin: row.client_gstin || ""
+  };
+}
+
 export class CentralInvoiceRepository {
+
+  /**
+   * Authoritative Single Read Path: Fetch all invoices with relational line items
+   */
+  public static async getInvoices(): Promise<{ success: boolean; data?: Invoice[]; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Supabase not configured." };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("jn_invoices")
+        .select(`
+          *,
+          items:jn_invoice_items(*)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const normalized = (data || []).map(row => mapSupabaseInvoiceToInvoice(row, row.items || []));
+      return { success: true, data: normalized };
+    } catch (err: any) {
+      console.error("[CentralInvoiceRepository] Error fetching invoices from Supabase:", err);
+      return { success: false, error: err.message || "Failed to load invoices from database." };
+    }
+  }
+
+  /**
+   * Authoritative Single Read Path: Fetch single invoice by ID or Number with line items
+   */
+  public static async getInvoiceById(idOrNumber: string): Promise<{ success: boolean; invoice?: Invoice; error?: string }> {
+    if (!isSupabaseConfigured() || !idOrNumber) {
+      return { success: false, error: "Supabase not configured or invalid invoice reference." };
+    }
+
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNumber);
+      let query = supabase
+        .from("jn_invoices")
+        .select(`
+          *,
+          items:jn_invoice_items(*)
+        `);
+
+      if (isUuid) {
+        query = query.eq("id", idOrNumber);
+      } else {
+        query = query.eq("invoice_number", idOrNumber);
+      }
+
+      const { data, error } = await query.limit(1).single();
+
+      if (error || !data) {
+        throw error || new Error(`Invoice '${idOrNumber}' not found in database.`);
+      }
+
+      const normalized = mapSupabaseInvoiceToInvoice(data, data.items || []);
+      return { success: true, invoice: normalized };
+    } catch (err: any) {
+      console.error(`[CentralInvoiceRepository] Error fetching invoice '${idOrNumber}':`, err);
+      return { success: false, error: err.message || "Failed to load invoice." };
+    }
+  }
 
   /**
    * Resolves User ID to canonical Supabase UUID
@@ -371,10 +529,18 @@ export class CentralInvoiceRepository {
       if (payload.notes) updateHeader.notes = payload.notes;
 
       // Match by ID or invoice_number
-      const { data: updatedHeader, error: headerErr } = await supabase
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
+      let updateQuery = supabase
         .from("jn_invoices")
-        .update(updateHeader)
-        .or(`id.eq.${invoiceIdOrNumber},invoice_number.eq.${invoiceIdOrNumber}`)
+        .update(updateHeader);
+
+      if (isUuid) {
+        updateQuery = updateQuery.eq("id", invoiceIdOrNumber);
+      } else {
+        updateQuery = updateQuery.eq("invoice_number", invoiceIdOrNumber);
+      }
+
+      const { data: updatedHeader, error: headerErr } = await updateQuery
         .select("id, invoice_number")
         .single();
 
@@ -406,7 +572,8 @@ export class CentralInvoiceRepository {
         `Updated invoice ${updatedHeader.invoice_number} in backend Supabase database`
       );
 
-      return { success: true };
+      const refreshed = await this.getInvoiceById(updatedHeader.id);
+      return { success: true, invoice: refreshed.invoice };
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] updateInvoice error:", err);
       return { success: false, error: err.message };
@@ -420,11 +587,18 @@ export class CentralInvoiceRepository {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
 
     try {
-      const { data: target } = await supabase
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
+      let selQuery = supabase
         .from("jn_invoices")
-        .select("id, invoice_number")
-        .or(`id.eq.${invoiceIdOrNumber},invoice_number.eq.${invoiceIdOrNumber}`)
-        .single();
+        .select("id, invoice_number");
+
+      if (isUuid) {
+        selQuery = selQuery.eq("id", invoiceIdOrNumber);
+      } else {
+        selQuery = selQuery.eq("invoice_number", invoiceIdOrNumber);
+      }
+
+      const { data: target } = await selQuery.single();
 
       if (target) {
         await supabase.from("jn_invoice_items").delete().eq("invoice_id", target.id);
