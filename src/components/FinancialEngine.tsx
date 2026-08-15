@@ -569,11 +569,14 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
     const sealHash = generateHashSync(`${inv.id}|${inv.date}|${inv.grandTotal}|${inv.clientName}|MyFirmSecureKey2026!`).substring(0, 8).toUpperCase();
 
-    // Extract the rendered QR Code SVGs from the DOM if available
+    // Extract the rendered QR Code SVGs from the DOM specifically (Shield icon is svg 0, Payment QR is svg 1, Seal QR is svg 2)
     const printableEl = document.getElementById("printable_invoice_canvas");
-    const qrSvgs = printableEl ? printableEl.querySelectorAll("svg") : [];
-    const paymentQrHtml = qrSvgs[0] ? qrSvgs[0].outerHTML : "";
-    const sealQrHtml = qrSvgs[1] ? qrSvgs[1].outerHTML : "";
+    const allSvgs = printableEl ? Array.from(printableEl.querySelectorAll("svg")) : [];
+    const paymentQrSvg = allSvgs.find(s => s.getAttribute("height") === "100" || s.parentElement?.parentElement?.textContent?.includes("Scan to Pay")) || allSvgs[1];
+    const sealQrSvg = allSvgs.find(s => s.getAttribute("height") === "72" || s.parentElement?.parentElement?.textContent?.includes("SEAL:")) || allSvgs[2] || allSvgs[allSvgs.length - 1];
+
+    const paymentQrHtml = paymentQrSvg ? paymentQrSvg.outerHTML : "";
+    const sealQrHtml = sealQrSvg ? sealQrSvg.outerHTML : "";
 
     return `
       <!DOCTYPE html>
@@ -596,9 +599,6 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             .invoice-meta { width: 40%; max-width: 40%; text-align: right; box-sizing: border-box; }
             .invoice-type { font-size: 17px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; }
             .meta-box { display: inline-block; background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 6px; margin-top: 4px; text-align: left; font-size: 9px; width: 100%; box-sizing: border-box; }
-            .meta-row { margin-bottom: 2px; display: flex; justify-content: space-between; }
-            .meta-label { color: #475569; font-weight: 600; }
-            .meta-val { font-weight: 800; color: #0D2C6C; font-family: monospace; }
             .details-grid { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 14px; margin-bottom: 14px; font-size: 9.5px; width: 100%; box-sizing: border-box; }
             .client-col { width: 58%; max-width: 58%; word-break: break-word; box-sizing: border-box; }
             .compliance-col { width: 40%; max-width: 40%; text-align: right; word-break: break-word; box-sizing: border-box; }
@@ -651,10 +651,26 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               <div class="invoice-meta">
                 <div class="invoice-type">${inv.type || "TAX INVOICE"}</div>
                 <div class="meta-box">
-                  <div class="meta-row"><span class="meta-label">Invoice Ref:</span> <span class="meta-val">${inv.id}</span></div>
-                  <div class="meta-row"><span class="meta-label">Issue Date:</span> <strong style="color: #1e293b;">${inv.date}</strong></div>
-                  <div class="meta-row"><span class="meta-label">Due Date:</span> <strong style="color: #e11d48;">${inv.dueDate}</strong></div>
-                  <div class="meta-row"><span class="meta-label">Workflow ID:</span> <span style="font-family: monospace; color: #64748b;">${inv.workflowId || "WF_SYNC_01"}</span></div>
+                  <table style="width: 100%; border-collapse: collapse; border: none; font-size: 9px;">
+                    <tbody>
+                      <tr>
+                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Invoice Ref:</td>
+                        <td style="padding: 1.5px 0; border: none; font-weight: 800; color: #0D2C6C; font-family: monospace; text-align: right;">${inv.id}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Issue Date:</td>
+                        <td style="padding: 1.5px 0; border: none; font-weight: bold; color: #1e293b; text-align: right;">${inv.date}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Due Date:</td>
+                        <td style="padding: 1.5px 0; border: none; font-weight: bold; color: #e11d48; text-align: right;">${inv.dueDate}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 1.5px 0; border: none; color: #475569; font-weight: 600; text-align: left;">Workflow ID:</td>
+                        <td style="padding: 1.5px 0; border: none; font-family: monospace; color: #64748b; font-weight: bold; text-align: right;">${inv.workflowId || "WF_SYNC_01"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -841,11 +857,11 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
               <div class="sign-col">
                 <div class="seal-badge">🛡️ Digitally Verified & Authenticated</div>
-                <div style="margin-top: 3px; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-                  ${sealQrHtml ? `<div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px; margin-bottom: 4px;">${sealQrHtml}</div>` : ""}
-                  <div style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-bottom: 6px;">SEAL: ${sealHash}</div>
-                  <div class="sign-line"></div>
-                  <div style="font-size: 8.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase;">Jain Agarwal & Co.</div>
+                <div style="margin-top: 3px; text-align: right;">
+                  ${sealQrHtml ? `<div style="display: inline-block; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px; margin-bottom: 2px;">${sealQrHtml}</div>` : ""}
+                  <div style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-bottom: 4px;">SEAL: ${sealHash}</div>
+                  <div class="sign-line" style="width: 110px; border-bottom: 1px dashed #94a3b8; margin-left: auto; margin-bottom: 3px;"></div>
+                  <div style="font-size: 8.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px;">Jain Agarwal & Co.</div>
                   <div style="font-size: 7px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
                 </div>
               </div>
