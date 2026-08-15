@@ -583,45 +583,45 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           <title>${options?.title || inv.id}</title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 11px; line-height: 1.4; padding: 24px; }
-            .invoice-box { width: 100%; max-width: 800px; margin: 0 auto; background: #ffffff; }
-            .header-grid { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 16px; }
-            .firm-info { display: flex; align-items: flex-start; gap: 12px; }
-            .logo-box { width: 44px; height: 44px; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 10.5px; line-height: 1.35; padding: 0; margin: 0; }
+            .invoice-box { width: 720px; max-width: 720px; min-width: 720px; margin: 0 auto; background: #ffffff; padding: 16px 18px; box-sizing: border-box; overflow: hidden; }
+            .header-grid { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 14px; width: 100%; box-sizing: border-box; }
+            .firm-info { display: flex; align-items: flex-start; gap: 10px; width: 58%; max-width: 58%; box-sizing: border-box; }
+            .logo-box { width: 42px; height: 42px; border: 1px solid #f1f5f9; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
             .logo-img { width: 100%; height: 100%; object-fit: contain; }
-            .firm-title { font-size: 14px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px; }
+            .firm-title { font-size: 13.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px; }
             .firm-subtitle { font-size: 8px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 1px; }
-            .firm-desc { font-size: 9.5px; color: #64748b; font-weight: 500; margin-top: 4px; max-width: 320px; line-height: 1.3; }
-            .firm-contact { font-size: 9px; color: #94a3b8; font-weight: 600; margin-top: 4px; }
-            .invoice-meta { text-align: right; }
-            .invoice-type { font-size: 18px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; }
-            .meta-box { display: inline-block; background: #f8fafc; border: 1px solid #f1f5f9; padding: 8px 12px; border-radius: 8px; margin-top: 6px; text-align: left; font-size: 9.5px; }
-            .meta-row { margin-bottom: 2px; }
+            .firm-desc { font-size: 9px; color: #64748b; font-weight: 500; margin-top: 3px; line-height: 1.3; }
+            .firm-contact { font-size: 8.5px; color: #94a3b8; font-weight: 600; margin-top: 3px; }
+            .invoice-meta { width: 40%; max-width: 40%; text-align: right; box-sizing: border-box; }
+            .invoice-type { font-size: 17px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; }
+            .meta-box { display: inline-block; background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 6px; margin-top: 4px; text-align: left; font-size: 9px; width: 100%; box-sizing: border-box; }
+            .meta-row { margin-bottom: 2px; display: flex; justify-content: space-between; }
             .meta-label { color: #475569; font-weight: 600; }
             .meta-val { font-weight: 800; color: #0D2C6C; font-family: monospace; }
-            .details-grid { display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 16px; font-size: 10px; }
-            .client-col { width: 55%; }
-            .compliance-col { width: 40%; text-align: right; }
-            .section-tag { font-size: 8px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-            .client-name { font-size: 12px; font-weight: 900; color: #0D2C6C; }
-            .client-text { color: #64748b; font-weight: 600; line-height: 1.4; margin-top: 2px; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-            .items-table th { background: #f8fafc; color: #334155; font-size: 9px; font-weight: 900; text-transform: uppercase; border: 1px solid #cbd5e1; padding: 6px 8px; }
-            .items-table td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 9.5px; color: #334155; }
+            .details-grid { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 14px; margin-bottom: 14px; font-size: 9.5px; width: 100%; box-sizing: border-box; }
+            .client-col { width: 58%; max-width: 58%; word-break: break-word; box-sizing: border-box; }
+            .compliance-col { width: 40%; max-width: 40%; text-align: right; word-break: break-word; box-sizing: border-box; }
+            .section-tag { font-size: 8px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+            .client-name { font-size: 11.5px; font-weight: 900; color: #0D2C6C; }
+            .client-text { color: #64748b; font-weight: 600; line-height: 1.35; margin-top: 2px; }
+            .items-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 14px; box-sizing: border-box; }
+            .items-table th { background: #f8fafc; color: #334155; font-size: 8.5px; font-weight: 900; text-transform: uppercase; border: 1px solid #cbd5e1; padding: 5px 6px; box-sizing: border-box; }
+            .items-table td { border: 1px solid #cbd5e1; padding: 5px 6px; font-size: 9px; color: #334155; box-sizing: border-box; word-break: break-word; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .font-bold { font-weight: bold; }
             .font-black { font-weight: 900; }
-            .words-box { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 9.5px; color: #334155; font-weight: bold; }
-            .footer-grid { display: flex; justify-content: space-between; border-top: 1px solid #cbd5e1; padding-top: 16px; margin-top: 8px; font-size: 9.5px; }
-            .bank-col { width: 35%; }
-            .bank-card { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-size: 9px; line-height: 1.5; color: #475569; font-weight: bold; }
-            .qr-col { width: 30%; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-            .qr-card { background: #ffffff; border: 1px solid #f1f5f9; border-radius: 8px; padding: 6px; display: inline-block; margin-top: 4px; }
-            .sign-col { width: 30%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; }
-            .seal-badge { font-size: 7.5px; color: #D4AF37; background: #f8fafc; border: 1px solid #f1f5f9; padding: 3px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 8px; }
-            .sign-line { width: 120px; border-bottom: 1px dashed #94a3b8; margin-bottom: 4px; }
-            .terms-box { border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 16px; font-size: 8px; color: #94a3b8; line-height: 1.4; }
+            .words-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 9px; color: #334155; font-weight: bold; box-sizing: border-box; width: 100%; }
+            .footer-grid { display: flex; justify-content: space-between; border-top: 1px solid #cbd5e1; padding-top: 14px; margin-top: 6px; font-size: 9px; width: 100%; box-sizing: border-box; align-items: flex-start; }
+            .bank-col { width: 36%; max-width: 36%; box-sizing: border-box; }
+            .bank-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 8px; margin-top: 3px; font-size: 8.5px; line-height: 1.45; color: #475569; font-weight: bold; }
+            .qr-col { width: 28%; max-width: 28%; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; }
+            .qr-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px; display: inline-block; margin-top: 3px; }
+            .sign-col { width: 34%; max-width: 34%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; box-sizing: border-box; }
+            .seal-badge { font-size: 7px; color: #D4AF37; background: #f8fafc; border: 1px solid #e2e8f0; padding: 2.5px 5px; border-radius: 4px; font-weight: bold; margin-bottom: 6px; }
+            .sign-line { width: 110px; border-bottom: 1px dashed #94a3b8; margin-bottom: 3px; }
+            .terms-box { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 14px; font-size: 7.5px; color: #94a3b8; line-height: 1.35; box-sizing: border-box; width: 100%; }
             @page { size: A4 portrait; margin: 10mm 12mm; }
             @media print {
               body { padding: 0 !important; background: #fff !important; }
@@ -665,7 +665,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 <div class="section-tag">BILLED TO (CLIENT RECIPIENT)</div>
                 <div class="client-name">${inv.clientName}</div>
                 <div class="client-text">Address: ${clientAddress}</div>
-                <div class="client-text" style="font-weight: 700; color: #334155; margin-top: 4px;">
+                <div class="client-text" style="font-weight: 700; color: #334155; margin-top: 3px;">
                   <div>GSTIN/UID: ${clientGstin}</div>
                   ${clientMobile ? `<div>Mobile: +91 ${clientMobile}</div>` : ""}
                   ${clientEmail ? `<div>Email: ${clientEmail}</div>` : ""}
@@ -678,7 +678,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                   <div><span style="color: #94a3b8;">Associated Case Number:</span> ${inv.caseId}</div>
                   <div><span style="color: #94a3b8;">Services Stream:</span> ${inv.serviceName}</div>
                   <div><span style="color: #94a3b8;">Assigned Consultant:</span> Senior Tax & Financial Consultant</div>
-                  <div style="margin-top: 4px;">
+                  <div style="margin-top: 3px;">
                     <span style="color: #94a3b8;">Invoice Status:</span>
                     <span style="color: #D4AF37; font-weight: 900; text-transform: uppercase; margin-left: 4px;">${inv.status}</span>
                   </div>
@@ -686,13 +686,13 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               </div>
             </div>
 
-            <!-- 3. Service Line Items Table -->
+            <!-- 3. Service Line Items Table (Columns sum to EXACTLY 100%) -->
             <table class="items-table">
               <thead>
                 <tr>
                   <th style="width: 5%;">#</th>
-                  <th style="width: 38%;">Service Item Details</th>
-                  <th style="width: 7%;" class="text-center">Qty</th>
+                  <th style="width: 35%;">Service Item Details</th>
+                  <th style="width: 6%;" class="text-center">Qty</th>
                   <th style="width: 10%;" class="text-right">Rate</th>
                   <th style="width: 10%;" class="text-right">Taxable Val</th>
                   <th style="width: 8%;" class="text-right">CGST %</th>
@@ -714,32 +714,32 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
                   return `
                     <tr>
-                      <td class="font-bold">${idx + 1}</td>
+                      <td class="font-bold text-center">${idx + 1}</td>
                       <td>
                         <div class="font-bold" style="color: #1e293b;">${item.serviceName || "Service Item"}</div>
-                        ${item.description ? `<div style="font-size: 8.5px; color: #94a3b8; margin-top: 2px;">${item.description}</div>` : ""}
+                        ${item.description ? `<div style="font-size: 8px; color: #94a3b8; margin-top: 1.5px; line-height: 1.25;">${item.description}</div>` : ""}
                       </td>
                       <td class="text-center font-bold">${itemQty}</td>
                       <td class="text-right">₹${itemRate.toLocaleString("en-IN")}</td>
                       <td class="text-right font-bold">₹${itemTaxable.toLocaleString("en-IN")}</td>
                       <td class="text-right">
                         ${!hasIgst && (item.gstRate || 0) > 0 ? `${(item.gstRate || 0) / 2}%` : "-"}
-                        ${!hasIgst && itemCgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemCgst.toLocaleString("en-IN")}</div>` : ""}
+                        ${!hasIgst && itemCgst > 0 ? `<div style="font-size: 7px; color: #94a3b8;">₹${itemCgst.toLocaleString("en-IN")}</div>` : ""}
                       </td>
                       <td class="text-right">
                         ${!hasIgst && (item.gstRate || 0) > 0 ? `${(item.gstRate || 0) / 2}%` : "-"}
-                        ${!hasIgst && itemSgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemSgst.toLocaleString("en-IN")}</div>` : ""}
+                        ${!hasIgst && itemSgst > 0 ? `<div style="font-size: 7px; color: #94a3b8;">₹${itemSgst.toLocaleString("en-IN")}</div>` : ""}
                       </td>
                       <td class="text-right">
                         ${hasIgst && (item.gstRate || 0) > 0 ? `${item.gstRate}%` : "-"}
-                        ${hasIgst && itemIgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemIgst.toLocaleString("en-IN")}</div>` : ""}
+                        ${hasIgst && itemIgst > 0 ? `<div style="font-size: 7px; color: #94a3b8;">₹${itemIgst.toLocaleString("en-IN")}</div>` : ""}
                       </td>
                       <td class="text-right font-black" style="color: #1e293b;">₹${itemTotal.toLocaleString("en-IN")}</td>
                     </tr>
                   `;
                 }).join("") : `
                   <tr>
-                    <td colspan="9" style="text-align: center; color: #94a3b8; font-style: italic; padding: 16px;">
+                    <td colspan="9" style="text-align: center; color: #94a3b8; font-style: italic; padding: 14px;">
                       No service line items recorded for this invoice.
                     </td>
                   </tr>
@@ -748,19 +748,19 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 <!-- Calculations Breakdown Rows -->
                 <tr style="background: #f8fafc;">
                   <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Gross Total Base Billed:</td>
-                  <td colspan="2" class="text-right font-black" style="color: #1e293b; font-size: 10.5px;">₹${(inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
+                  <td colspan="2" class="text-right font-black" style="color: #1e293b; font-size: 10px;">₹${(inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
                 </tr>
 
                 ${(inv.discountAmount || 0) > 0 ? `
                   <tr>
                     <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #e11d48;">Discount Reduction:</td>
-                    <td colspan="2" class="text-right font-black" style="color: #e11d48; font-size: 10.5px;">- ₹${(inv.discountAmount || 0).toLocaleString("en-IN")}</td>
+                    <td colspan="2" class="text-right font-black" style="color: #e11d48; font-size: 10px;">- ₹${(inv.discountAmount || 0).toLocaleString("en-IN")}</td>
                   </tr>
                 ` : ""}
 
                 <tr style="background: #f8fafc;">
                   <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Total Taxable Value (Net):</td>
-                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 10.5px;">₹${(inv.taxableAmount ?? inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
+                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 10px;">₹${(inv.taxableAmount ?? inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
                 </tr>
 
                 ${(inv.cgstAmount || 0) > 0 ? `
@@ -792,26 +792,26 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 ` : ""}
 
                 <tr style="background: #eff6ff;">
-                  <td colspan="7" class="text-right font-black" style="text-transform: uppercase; color: #0D2C6C; font-size: 11px; padding: 10px 8px;">Grand Outstanding Total:</td>
-                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 11px; padding: 10px 8px;">₹${(inv.grandTotal ?? 0).toLocaleString("en-IN")}</td>
+                  <td colspan="7" class="text-right font-black" style="text-transform: uppercase; color: #0D2C6C; font-size: 10.5px; padding: 8px 6px;">Grand Outstanding Total:</td>
+                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 10.5px; padding: 8px 6px;">₹${(inv.grandTotal ?? 0).toLocaleString("en-IN")}</td>
                 </tr>
               </tbody>
             </table>
 
             <!-- 4. Amount in Words -->
             <div class="words-box">
-              <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;">Total Amount in Words</div>
+              <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px;">Total Amount in Words</div>
               <div style="color: #1e293b;">${inv.amountInWords || numberToWords(inv.grandTotal ?? 0)}</div>
             </div>
 
             <!-- 5. Payment Receipts Allocation Log (if present) -->
             ${inv.payments && inv.payments.length > 0 ? `
-              <div style="margin-bottom: 16px; font-size: 9.5px;">
-                <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Payment Receipts Allocation Log</div>
+              <div style="margin-bottom: 14px; font-size: 9px; box-sizing: border-box; width: 100%;">
+                <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px;">Payment Receipts Allocation Log</div>
                 ${inv.payments.map((p: any) => `
-                  <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 6px 10px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: #166534;">
-                    <div><strong>Receipt #${p.id}</strong> • logged via [${p.mode}] on ${p.date} ${p.transactionRef ? `<span style="font-family: monospace; font-size: 8px;">Ref: ${p.transactionRef}</span>` : ""}</div>
-                    <strong style="font-size: 10.5px;">₹${p.amount.toLocaleString("en-IN")}</strong>
+                  <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 5px 8px; margin-bottom: 3px; display: flex; justify-content: space-between; align-items: center; color: #166534;">
+                    <div><strong>Receipt #${p.id}</strong> • logged via [${p.mode}] on ${p.date} ${p.transactionRef ? `<span style="font-family: monospace; font-size: 7.5px;">Ref: ${p.transactionRef}</span>` : ""}</div>
+                    <strong style="font-size: 10px;">₹${p.amount.toLocaleString("en-IN")}</strong>
                   </div>
                 `).join("")}
               </div>
@@ -834,19 +834,19 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               <div class="qr-col">
                 <div class="section-tag" style="color: #0D2C6C;">SCAN TO PAY (GPAY/UPI)</div>
                 <div class="qr-card">
-                  ${paymentQrHtml || `<div style="width: 80px; height: 80px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #94a3b8;">UPI QR</div>`}
-                  <div style="font-size: 7.5px; color: #64748b; font-weight: bold; margin-top: 3px;">8828147889@okbizaxis</div>
+                  ${paymentQrHtml || `<div style="width: 75px; height: 75px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #94a3b8;">UPI QR</div>`}
+                  <div style="font-size: 7px; color: #64748b; font-weight: bold; margin-top: 2px;">8828147889@okbizaxis</div>
                 </div>
               </div>
 
               <div class="sign-col">
                 <div class="seal-badge">🛡️ Digitally Verified & Authenticated</div>
-                <div style="margin-top: 4px; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-                  ${sealQrHtml ? `<div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px; margin-bottom: 6px;">${sealQrHtml}</div>` : ""}
-                  <div style="font-size: 6.5px; color: #94a3b8; font-family: monospace; margin-bottom: 8px;">SEAL: ${sealHash}</div>
+                <div style="margin-top: 3px; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+                  ${sealQrHtml ? `<div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px; margin-bottom: 4px;">${sealQrHtml}</div>` : ""}
+                  <div style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-bottom: 6px;">SEAL: ${sealHash}</div>
                   <div class="sign-line"></div>
-                  <div style="font-size: 9px; font-weight: 900; color: #0D2C6C; text-transform: uppercase;">Jain Agarwal & Co.</div>
-                  <div style="font-size: 7.5px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
+                  <div style="font-size: 8.5px; font-weight: 900; color: #0D2C6C; text-transform: uppercase;">Jain Agarwal & Co.</div>
+                  <div style="font-size: 7px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
                 </div>
               </div>
             </div>
@@ -856,7 +856,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
               <strong style="color: #64748b; display: block; margin-bottom: 2px;">Terms & Conditions / Declarations:</strong>
               <div>1. Payment due within agreed terms. Delayed payments are subject to 18% p.a. interest as per practice standards.</div>
               <div>2. All disputes are subject to the exclusive jurisdiction of Thane Courts, Maharashtra.</div>
-              <div style="font-weight: bold; color: #64748b; margin-top: 2px;">This is a computer-generated, digitally authenticated document and does not require physical signatures.</div>
+              <div style="font-weight: bold; color: #64748b; margin-top: 1.5px;">This is a computer-generated, digitally authenticated document and does not require physical signatures.</div>
             </div>
           </div>
         </body>
@@ -864,7 +864,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     `;
   };
 
-  // Download Invoice as PDF using dedicated clean HTML/CSS renderer (zero Tailwind/oklch dependency)
+  // Download Invoice as PDF using dedicated clean HTML/CSS renderer with strict A4 page-safe margins (10mm)
   const handleDownloadPDF = async () => {
     if (!viewInvoice) return;
     setIsDownloading(true);
@@ -879,13 +879,13 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       const cleanClient = sanitize(viewInvoice.clientName || "Client");
       const filename = `${cleanNum}-${cleanClient}.pdf`;
 
-      // 2. Create isolated offscreen iframe with pure CSS (no Tailwind oklch)
+      // 2. Create isolated offscreen iframe with fixed A4 logical width (760px container, 720px invoice surface)
       iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
       iframe.style.left = "-9999px";
       iframe.style.top = "0";
-      iframe.style.width = "794px";
-      iframe.style.height = "1123px";
+      iframe.style.width = "760px";
+      iframe.style.height = "1200px";
       iframe.style.border = "none";
       document.body.appendChild(iframe);
 
@@ -901,16 +901,16 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
       const captureEl = doc.getElementById("invoice-capture-box") || doc.body;
 
-      // 3. Render high-res canvas via html2canvas (isolated document has 0 oklch!)
+      // 3. Render high-res canvas via html2canvas (captures dedicated 720px invoice surface)
       const canvas = await html2canvas(captureEl, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
-        windowWidth: 794
+        windowWidth: 760
       });
 
-      // 4. Convert to PDF using jsPDF (A4 standard portrait)
+      // 4. Convert to PDF using jsPDF (A4 standard portrait with strict 10mm margins)
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -920,19 +920,24 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
       const pageWidth = 210; // mm
       const pageHeight = 297; // mm
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+      const marginX = 10; // mm (Left & Right safe margin)
+      const marginY = 10; // mm (Top & Bottom safe margin)
+      const printableWidth = pageWidth - (2 * marginX); // 190 mm
+      const printableHeight = pageHeight - (2 * marginY); // 277 mm
 
-      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      const imgWidth = printableWidth; // 190 mm exactly
+      const imgHeight = (canvas.height * imgWidth) / canvas.width; // Proportional aspect ratio
+      let heightLeft = imgHeight;
+      let position = marginY;
+
+      pdf.addImage(imgData, "JPEG", marginX, position, imgWidth, imgHeight);
+      heightLeft -= printableHeight;
 
       while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
+        position = marginY - (imgHeight - heightLeft);
         pdf.addPage();
-        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        pdf.addImage(imgData, "JPEG", marginX, position, imgWidth, imgHeight);
+        heightLeft -= printableHeight;
       }
 
       // 5. Trigger download
