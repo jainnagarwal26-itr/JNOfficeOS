@@ -549,13 +549,98 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     }
   };
 
-  // Download Invoice as PDF using isolated iframe to bypass Tailwind v4 oklch parsing error in html2canvas
+  // Helper function to sanitize any modern CSS color functions (oklch, oklab, lch, lab) into standard RGB/HEX for html2canvas compatibility
+  const sanitizeClonedDocForPDF = (clonedDoc: Document) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+
+    const toRgb = (colorStr: string): string => {
+      if (!colorStr || typeof colorStr !== "string") return colorStr;
+      if (!colorStr.includes("oklch") && !colorStr.includes("oklab") && !colorStr.includes("lch") && !colorStr.includes("lab")) {
+        return colorStr;
+      }
+      if (!ctx) return "#1e293b";
+      try {
+        ctx.fillStyle = "#000000";
+        ctx.fillStyle = colorStr;
+        return ctx.fillStyle; // Native browser engine converts oklch to rgb/rgba!
+      } catch {
+        return "#1e293b";
+      }
+    };
+
+    const sanitizeComplex = (str: string): string => {
+      if (!str || typeof str !== "string") return str;
+      if (!str.includes("oklch") && !str.includes("oklab") && !str.includes("lch") && !str.includes("lab")) {
+        return str;
+      }
+      return str.replace(/(?:oklch|oklab|lch|lab)\([^)]+\)/gi, (match) => toRgb(match));
+    };
+
+    // 1. Sanitize all style tags inside clonedDoc
+    clonedDoc.querySelectorAll("style").forEach((styleEl) => {
+      if (styleEl.textContent && (styleEl.textContent.includes("oklch") || styleEl.textContent.includes("oklab") || styleEl.textContent.includes("lch") || styleEl.textContent.includes("lab"))) {
+        styleEl.textContent = sanitizeComplex(styleEl.textContent);
+      }
+    });
+
+    // 2. Sanitize all computed and inline styles across all DOM elements in clonedDoc
+    const colorProps = [
+      "color",
+      "backgroundColor",
+      "borderColor",
+      "borderTopColor",
+      "borderRightColor",
+      "borderBottomColor",
+      "borderLeftColor",
+      "outlineColor",
+      "textDecorationColor",
+      "fill",
+      "stroke"
+    ];
+
+    clonedDoc.querySelectorAll("*").forEach((el: any) => {
+      // Check inline styles
+      colorProps.forEach((prop) => {
+        const val = el.style && el.style[prop];
+        if (val && (val.includes("oklch") || val.includes("oklab") || val.includes("lch") || val.includes("lab"))) {
+          el.style[prop] = toRgb(val);
+        }
+      });
+
+      if (el.style) {
+        if (el.style.boxShadow && (el.style.boxShadow.includes("oklch") || el.style.boxShadow.includes("oklab"))) {
+          el.style.boxShadow = sanitizeComplex(el.style.boxShadow);
+        }
+        if (el.style.textShadow && (el.style.textShadow.includes("oklch") || el.style.textShadow.includes("oklab"))) {
+          el.style.textShadow = sanitizeComplex(el.style.textShadow);
+        }
+      }
+
+      // Check computed styles as fallback
+      try {
+        const computed = window.getComputedStyle(el);
+        colorProps.forEach((prop) => {
+          const cVal = (computed as any)[prop];
+          if (cVal && (cVal.includes("oklch") || cVal.includes("oklab") || cVal.includes("lch") || cVal.includes("lab"))) {
+            el.style[prop] = toRgb(cVal);
+          }
+        });
+        if (computed.boxShadow && (computed.boxShadow.includes("oklch") || computed.boxShadow.includes("oklab"))) {
+          el.style.boxShadow = sanitizeComplex(computed.boxShadow);
+        }
+      } catch (_) {}
+    });
+  };
+
+  // Download Invoice as PDF with safe color sanitization (oklch -> rgb) and high-res vector rendering
   const handleDownloadPDF = async () => {
     const printContent = document.getElementById("printable_invoice_canvas");
     if (!printContent || !viewInvoice) return;
     setIsDownloading(true);
 
-    let iframe: HTMLIFrameElement | null = null;
     try {
       // 1. Sanitize filename: e.g. JNA-2026-27-000006-Akshay-Shyam-Sharma.pdf
       const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -563,77 +648,18 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       const cleanClient = sanitize(viewInvoice.clientName || "Client");
       const filename = `${cleanNum}-${cleanClient}.pdf`;
 
-      // 2. Create isolated offscreen iframe with standard non-oklch styles
-      iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.left = "-9999px";
-      iframe.style.top = "0";
-      iframe.style.width = "850px";
-      iframe.style.height = "1200px";
-      iframe.style.border = "none";
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentWindow?.document;
-      if (!doc) throw new Error("Could not access iframe document context.");
-
-      doc.open();
-      doc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; }
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #ffffff; color: #1e293b; padding: 24px; font-size: 11px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
-              th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; color: #334155; }
-              th { background-color: #f8fafc; font-weight: bold; color: #1e293b; }
-              .text-right { text-align: right; }
-              .text-center { text-align: center; }
-              .font-bold { font-weight: bold; }
-              .font-black { font-weight: 900; }
-              .font-semibold { font-weight: 600; }
-              .uppercase { text-transform: uppercase; }
-              .text-slate-800 { color: #1e293b; }
-              .text-slate-700 { color: #334155; }
-              .text-slate-600 { color: #475569; }
-              .text-slate-500 { color: #64748b; }
-              .text-slate-400 { color: #94a3b8; }
-              .text-blue-900, .text-\\[\\#0D2C6C\\] { color: #0D2C6C; }
-              .bg-slate-50 { background-color: #f8fafc; }
-              .bg-slate-100 { background-color: #f1f5f9; }
-              .border-slate-200 { border-color: #e2e8f0; }
-              .border-slate-100 { border-color: #f1f5f9; }
-              .grid { display: grid; }
-              .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-              .gap-4 { gap: 1rem; }
-              .gap-6 { gap: 1.5rem; }
-              .flex { display: flex; }
-              .items-center { align-items: center; }
-              .justify-between { justify-content: space-between; }
-            </style>
-          </head>
-          <body>
-            <div id="pdf-invoice-root" style="width: 800px; background: #ffffff; color: #1e293b;">
-              ${printContent.innerHTML}
-            </div>
-          </body>
-        </html>
-      `);
-      doc.close();
-
-      // Allow iframe DOM layout to compute
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      const targetEl = doc.getElementById("pdf-invoice-root") || doc.body;
-
-      const canvas = await html2canvas(targetEl, {
+      // 2. Render visible canvas into high-res canvas (2x scale for sharp text) with onclone color sanitization
+      const canvas = await html2canvas(printContent, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
-        windowWidth: 850
+        onclone: (clonedDoc) => {
+          sanitizeClonedDocForPDF(clonedDoc);
+        }
       });
 
+      // 3. Convert to PDF using jsPDF (A4 standard portrait)
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -658,14 +684,12 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
         heightLeft -= pageHeight;
       }
 
+      // 4. Trigger download
       pdf.save(filename);
     } catch (err: any) {
       console.error("[FinancialEngine] PDF generation error:", err);
       alert(`PDF generation failed: ${err.message || err.toString()}`);
     } finally {
-      if (iframe && document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-      }
       setIsDownloading(false);
     }
   };
