@@ -1,54 +1,61 @@
-# 🏢 JN OfficeOS v2.3 — Enterprise CA & Tax Practice OS
+# 🏢 JN OfficeOS — Enterprise Practice & Financial Operating System
 
-> **Enterprise Practice Management, Tax Advisory CRM, Financial Engine & Compliance Register for Chartered Accountant & Tax Advisory Firms.**
+> **Comprehensive Enterprise Practice Management, Tax Advisory CRM, Central Invoice Engine, Private Staff Chat, and Statutory Compliance Register for Chartered Accountants & Tax Advisory Firms.**
 
 [![Vite](https://img.shields.io/badge/Vite-6.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
-[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![License](https://img.shields.io/badge/License-Proprietary-gold?style=for-the-badge)](LICENSE)
 
 ---
 
 ## 🌟 Executive Overview
 
-**JN OfficeOS** is a comprehensive, enterprise-grade operating system designed for Chartered Accountant (CA) firms, Tax Consultants, and Financial Advisory practices. It unifies Client CRM, Workflows, Compliance Tracking, Invoicing, Document Management, and Real-Time Supabase RDBMS Data Synchronization into a single, high-performance web platform.
+**JN OfficeOS** is an enterprise-grade operating system built specifically for Chartered Accountant (CA) firms, Tax Consultants, and Corporate Advisory practices. It brings together Client CRM, Statutory Compliance Register, Case & Workflow Management, Centralized Invoicing & Ledger, Smart DMS Document Vault, Private Staff Chat with Real-Time Desktop Notifications, and Staff Daily Reports into a unified, high-performance web platform powered by **Supabase PostgreSQL**.
 
 ---
 
 ## 🔥 Key Core Modules
 
-### 1. 📊 Executive Practice Workspace & BI Analytics
-- **Real-Time KPIs**: Track Active Clients, Open Corporate Cases, Total Revenue, Realized Payments, and Outstanding Receivables.
-- **Visual Analytics**: Interactive bar charts and revenue breakdowns by financial year, category, and service type.
-- **Office Queue**: Real-time activity feed and urgent deadline notifications.
+### 1. 📜 Central Invoice & Financial Engine
+- **Centralized Integrity Layer**: Powered by `CentralInvoiceRepository` as the single authoritative read/write path with atomic PostgreSQL transactions.
+- **In-Place Multi-Item Editing**: Edit Service Name, Description, Quantity, Rate, Discount, and GST Rates in real-time with instant reactive calculations for Taxable Value, CGST, SGST, IGST, Round-Off, and Amount in Words.
+- **Client-Side High-Res PDF Engine**: Integrated `html2canvas` and `jsPDF` vector rendering for crisp, downloadable PDFs (`JNA-YYYY-YY-XXXXXX-Client-Name.pdf`) and dedicated A4 print preview.
+- **Multi-Format Invoicing**: Supports Tax Invoices, Bills of Supply, Proforma Invoices, Credit/Debit Notes, and Payment Receipts.
+- **Running Client Ledgers**: Double-entry bookkeeping ledger with debit/credit breakdown, payment logging, and balance tracking.
 
-### 2. 📁 Client CRM & Identity Directory
-- **360° Client Profile**: Complete tracking of Client Category (Individual, Firm, Pvt Ltd, LLP), PAN, GSTIN, TAN, Aadhaar, and Bank Details.
-- **Assigned Compliance Tags**: Selective assignment of GST, Income Tax (ITR), TDS, Tax Audit, Professional Tax, and ROC services per client.
-- **Staff Assignments**: Dedicated Relationship Manager and Staff Executive mapping for every client.
+### 2. 💬 Private Staff Chat & Real-Time Alert System
+- **Confidential Messaging**: End-to-end isolated communication channels between Staff and Partners (`STF000001`–`STF000004`).
+- **Real-Time Delivery & Notifications**: Supabase Realtime WebSocket synchronization with instant desktop banner popups, browser notifications, and auditory alerts.
+- **Read Receipts & Unread Counters**: Tracks delivery timestamps and message status with unread notification badges.
 
-### 3. 📂 Enterprise Case Directory & Workflow Engine
-- **Case Lifecycle Management**: Milestone-based tracking for GST Returns, ITR Filings, Statutory Audits, and Litigation Cases.
-- **Checklist & Timeline**: Granular task checklists with completion timestamps, staff notes, and audit logs.
+### 3. 📅 Statutory Compliance Register
+- **491 Pre-configured Statutory Due Dates**: Comprehensive tracking across GSTR-3B, GSTR-1, ITR-1 to ITR-7, Tax Audit Form 3CA/3CD, TDS Returns (24Q, 26Q, 27Q), Professional Tax (PTEC `SRV00015`, PTRC `SRV00016`), and MCA/ROC filings.
+- **Filing Workflow**: Interactive filing dialogs recording Filing Date, ARN / Acknowledgement Numbers, Challan BSR/CIN, and document attachments.
 
-### 4. 📜 Real-Time Invoicing & Financial Engine
-- **Multi-Format Invoicing**: Generate Tax Invoices, Bills of Supply, Proforma Invoices, Credit Notes, Debit Notes, and Receipts.
-- **Automated Tax Calculation**: Intra-State (CGST + SGST) vs Inter-State (IGST) automatic tax bifurcation based on Place of Supply.
-- **Real-Time Supabase Sync**: Direct real-time bi-directional synchronization with Supabase PostgreSQL (`jn_invoices` & `jn_invoice_items`).
-- **Double-Entry Ledgers**: Real-time client ledger history with debit/credit tracking and running balances.
+### 4. 📁 Client CRM & Identity Directory
+- **360° Client Dossier**: Complete records of Client Type (Individual, Partnership, Pvt Ltd, LLP), PAN, GSTIN, TAN, Aadhaar, Bank Details, and Addresses.
+- **Master Directory**: Master directory with automated State & Place of Supply recognition for Intra-State vs Inter-State GST tax splitting.
+- **Staff Mapping**: Dedicated Relationship Manager and Staff Executive assignment per client.
 
-### 5. 📅 Compliance Register & Recurring Task Engine
-- **Statutory Tracking**: Automated due-date calendars for GSTR-3B, GSTR-1, ITR, Form 3CD/3CB, TDS Return (24Q/26Q), PT, and MCA filings.
-- **Filing Workflow**: Mark-as-filed dialogs with ARN/ACK number logging, fee tracking, and document attachment.
+### 5. 📂 Enterprise Case Management & Workflows
+- **Case Lifecycle Tracking**: Milestone-based tracking for GST Returns, ITR Filings, Statutory Audits, Assessment Proceedings, and Appeals.
+- **Granular Task Checklists**: Structured checklists with timestamped completions, internal notes, and audit logs.
 
-### 6. 🗄️ Smart DMS Master & Document Storage
-- **Categorized Document Repository**: Secure client-wise storage for PAN Cards, Incorporation Certificates, Tax Audit Reports, and Financial Statements.
-- **Supabase Storage Integration**: Real-time upload and retrieval from dedicated Supabase S3-compatible buckets.
+### 6. 🗄️ Smart DMS PRO Document Vault
+- **Categorized Secure Storage**: Client-wise and category-wise storage for Permanent Files, PAN/Aadhaar, Incorporation Documents, Financial Statements, and Audit Reports.
+- **Storage Integration**: Direct integration with dedicated Supabase S3-compatible storage buckets.
 
-### 7. 👥 User & Staff Role Management
-- **Role-Based Access Control (RBAC)**: Fine-grained permissions for `OWNER` (Admin/Partner) and `STAFF` (Consultants/Assistants).
-- **Staff Profiles**: Official Designation, Department, Mobile, Email, and Access Rights mapping.
+### 7. 📝 Staff Daily Reports & Timesheets
+- **Daily Activity Logging**: Track daily tasks completed, time spent, client billable hours, and task progress per staff member.
+- **Partner Review**: Real-time dashboard for Partners to review staff work logs and productivity metrics.
+
+### 8. 👥 Role-Based Access Control (RBAC) & Security
+- **Dual-Tier Permissions**: Strict permission enforcement separating `OWNER` (Partners) from `STAFF` (Associates/Assistants).
+- **PostgreSQL Row-Level Security (RLS)**: Database-level policy protection ensuring authoritative data boundaries.
+- **Immutable Audit Trail**: System-wide audit logging for all critical operations (login, invoices, compliance filings, client updates).
 
 ---
 
@@ -56,52 +63,52 @@
 
 | Layer | Technology |
 | :--- | :--- |
-| **Frontend Core** | React 18 (Hooks, Context), TypeScript 5.5 |
-| **Build & Bundler** | Vite 6.4 |
-| **Styling** | Vanilla CSS, Tailwind CSS 3.4, Framer Motion |
-| **Icons** | Lucide React |
-| **Backend DB** | Supabase PostgreSQL RDBMS |
-| **Database Schema** | 42 Relational Tables across 16 SQL Domain Migrations |
-| **Storage & Buckets** | 5 Supabase S3 Storage Buckets (`jn-client-documents`, `jn-invoices`, `jn-audits`, `jn-templates`, `jn-avatars`) |
-| **PDF Generation** | Client-Side PDF Renderer with HTML2PDF & Native Print fallbacks |
+| **Frontend Core** | React 19, TypeScript 5.8, Motion (Framer Motion) |
+| **Build & Tooling** | Vite 6.4, PostCSS, LightningCSS |
+| **Styling** | Tailwind CSS 4.0, Custom Curated HSL Themes |
+| **Icons & UI** | Lucide React, QRCode React, Recharts |
+| **Database & Auth** | Supabase PostgreSQL RDBMS, Supabase Realtime WebSockets |
+| **PDF Generation** | jsPDF 4.2 + html2canvas (High-Res 2x Scale Client-Side Rendering) |
+| **Security** | PostgreSQL RLS Policies, Argon2 / SHA-256 Hashing, OTP Verification |
 
 ---
 
-## 🗄️ Database Architecture (Supabase RDBMS)
-
-The application communicates directly with Supabase PostgreSQL using 16 domain-specific migration scripts located in `supabase/migrations/`:
+## 🏗️ System Architecture
 
 ```
-supabase/migrations/
-├── 01_enterprise_database_foundation.sql
-├── 01_enterprise_schema.sql
-├── 02_enterprise_auth_and_rls.sql
-├── 02_rls_policies.sql
-├── 03_enterprise_crm_domain.sql
-├── 03_triggers_functions_indexes.sql
-├── 04_enterprise_case_management.sql
-├── 04_storage_buckets.sql
-├── 05_enterprise_finance_domain.sql
-├── 06_enterprise_document_management.sql
-├── 07_enterprise_notifications.sql
-├── 08_enterprise_automation.sql
-├── 09_enterprise_reporting_and_analytics.sql
-├── 10_enterprise_ai_foundation.sql
-├── 11_enterprise_ocr_domain.sql
-├── 12_enterprise_client_portal.sql
-├── 13_enterprise_client_activation.sql
-├── 14_enterprise_compliance_engine.sql
-├── 15_client_centric_compliance_workspace.sql
-└── 16_enterprise_connectivity_and_indexing.sql
+                                  ┌──────────────────────────────┐
+                                  │      React 19 Frontend       │
+                                  │   (Vite + Tailwind CSS 4)    │
+                                  └──────────────┬───────────────┘
+                                                 │
+                  ┌──────────────────────────────┼──────────────────────────────┐
+                  ▼                              ▼                              ▼
+     ┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
+     │  FinancialEngine.tsx   │     │ PrivateStaffChat.tsx   │     │ ComplianceRegister.tsx │
+     │  (Invoice / Ledgers)   │     │ (Real-Time Messaging)  │     │   (491 Due Dates)      │
+     └───────────┬────────────┘     └────────────┬───────────┘     └────────────┬───────────┘
+                 │                               │                              │
+                 ▼                               ▼                              ▼
+     ┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
+     │CentralInvoiceRepository│     │ PrivateChatRepository  │     │  ComplianceRepository  │
+     └───────────┬────────────┘     └────────────┬───────────┘     └────────────┬───────────┘
+                 │                               │                              │
+                 └───────────────────────────────┼──────────────────────────────┘
+                                                 │
+                                                 ▼
+                                  ┌──────────────────────────────┐
+                                  │     Supabase PostgreSQL      │
+                                  │   Authoritative RDBMS & RLS  │
+                                  └──────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Local Setup & Installation Guide
+## 🚀 Getting Started
 
 ### Prerequisites
 - **Node.js**: v18.0.0 or higher
-- **npm** or **bun** / **yarn**
+- **npm** (or **pnpm** / **yarn**)
 
 ### 1. Clone the Repository
 ```bash
@@ -114,7 +121,7 @@ cd JNOfficeOS
 npm install
 ```
 
-### 3. Environment Setup
+### 3. Configure Environment
 Create a `.env` file in the project root:
 ```env
 VITE_SUPABASE_URL=https://hljwxadlzlfokeyimcbm.supabase.co
@@ -125,16 +132,27 @@ VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 ```bash
 npm run dev
 ```
-Open **`http://localhost:5173`** in your browser.
+Open **`http://localhost:3000`** in your browser.
 
-### 5. Build for Production
+### 5. Production Build
 ```bash
 npm run build
 ```
 
 ---
 
-## 📄 License & Credits
+## 🔒 Production Baselines & Data Integrity
 
-Developed for **Jain Agarwal & Co.** (Chartered Accountants & Tax Advisors).  
+- **Database Source of Truth**: Supabase PostgreSQL (`hljwxadlzlfokeyimcbm`)
+- **Active Client Identities**: `CL000001`, `CL000002`, `CL000003`
+- **Active Staff Identities**: `STF000001` (Partner/Owner), `STF000002` (Staff), `STF000003` (Staff), `STF000004` (Staff)
+- **Services Master**: 29 Standard Practice Services across 7 Categories (including PTEC `SRV00015`, PTRC `SRV00016`)
+- **Compliance Baseline**: 491 Statutory Due Date Records
+- **Google Sheets**: Fully Decommissioned — Supabase PostgreSQL is the sole authoritative backend.
+
+---
+
+## 📄 License & Intellectual Property
+
+Developed exclusively for **Jain Agarwal & Co.** (Chartered Accountants & Tax Advisors).  
 Copyright © 2026 Jain Agarwal & Co. All rights reserved.
