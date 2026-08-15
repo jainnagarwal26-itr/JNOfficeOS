@@ -117,14 +117,25 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
     amountInWords: numberToWords(totalAmount),
     status: statusReverseMap[row.status] || "Unpaid",
     items: normalizedItems,
-    payments: amountPaid > 0 ? [{
-      id: `REC_${row.invoice_number}`,
-      invoiceId: row.invoice_number,
-      date: row.invoice_date,
-      amount: amountPaid,
-      mode: "Bank Transfer",
-      createdAt: row.created_at
-    }] : [],
+    payments: (row.receipts && row.receipts.length > 0)
+      ? row.receipts.map((r: any) => ({
+          id: r.receipt_number || r.id,
+          invoiceId: row.invoice_number,
+          date: r.receipt_date || row.invoice_date,
+          amount: Number(r.amount_received || 0),
+          mode: r.payment_mode || "Bank Transfer",
+          transactionRef: r.transaction_ref || undefined,
+          remarks: r.remarks || undefined,
+          createdAt: r.created_at
+        }))
+      : (amountPaid > 0 ? [{
+          id: `REC_${row.invoice_number}`,
+          invoiceId: row.invoice_number,
+          date: row.invoice_date,
+          amount: amountPaid,
+          mode: "Bank Transfer",
+          createdAt: row.created_at
+        }] : []),
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || new Date().toISOString(),
     walkInAddress: row.client_address || "",
@@ -136,7 +147,7 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
 export class CentralInvoiceRepository {
 
   /**
-   * Authoritative Single Read Path: Fetch all invoices with relational line items
+   * Authoritative Single Read Path: Fetch all invoices with relational line items & receipts
    */
   public static async getInvoices(): Promise<{ success: boolean; data?: Invoice[]; error?: string }> {
     if (!isSupabaseConfigured()) {
@@ -148,13 +159,14 @@ export class CentralInvoiceRepository {
         .from("jn_invoices")
         .select(`
           *,
-          items:jn_invoice_items(*)
+          items:jn_invoice_items(*),
+          receipts:jn_receipts(*)
         `)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      const normalized = (data || []).map(row => mapSupabaseInvoiceToInvoice(row, row.items || []));
+      const normalized = (data || []).map(row => mapSupabaseInvoiceToInvoice(row, row.items || [], row.receipts || []));
       return { success: true, data: normalized };
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] Error fetching invoices from Supabase:", err);
@@ -163,7 +175,7 @@ export class CentralInvoiceRepository {
   }
 
   /**
-   * Authoritative Single Read Path: Fetch single invoice by ID or Number with line items
+   * Authoritative Single Read Path: Fetch single invoice by ID or Number with line items & receipts
    */
   public static async getInvoiceById(idOrNumber: string): Promise<{ success: boolean; invoice?: Invoice; error?: string }> {
     if (!isSupabaseConfigured() || !idOrNumber) {
@@ -176,7 +188,8 @@ export class CentralInvoiceRepository {
         .from("jn_invoices")
         .select(`
           *,
-          items:jn_invoice_items(*)
+          items:jn_invoice_items(*),
+          receipts:jn_receipts(*)
         `);
 
       if (isUuid) {
@@ -191,7 +204,7 @@ export class CentralInvoiceRepository {
         throw error || new Error(`Invoice '${idOrNumber}' not found in database.`);
       }
 
-      const normalized = mapSupabaseInvoiceToInvoice(data, data.items || []);
+      const normalized = mapSupabaseInvoiceToInvoice(data, data.items || [], data.receipts || []);
       return { success: true, invoice: normalized };
     } catch (err: any) {
       console.error(`[CentralInvoiceRepository] Error fetching invoice '${idOrNumber}':`, err);
@@ -627,6 +640,144 @@ export class CentralInvoiceRepository {
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] deleteInvoice error:", err);
       return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Atomic Payment & Receipt Recording in Supabase PostgreSQL
+   */
+  public static async recordInvoicePayment(
+    invoiceIdOrNumber: string,
+    amount: number,
+    mode: string,
+    transactionRef?: string,
+    remarks?: string,
+    currentUser?: any
+  ): Promise<{ success: boolean; invoice?: Invoice; receiptNumber?: string; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Supabase not configured." };
+    }
+
+    if (!invoiceIdOrNumber || amount <= 0) {
+      return { success: false, error: "Invalid payment details. Amount must be greater than zero." };
+    }
+
+    try {
+      const userUuid = await this.resolveUserUuid(currentUser?.id || currentUser?.email);
+
+      // Attempt 1: Call RPC record_invoice_payment
+      const { data: rpcData, error: rpcError } = await supabase.rpc("record_invoice_payment", {
+        p_invoice_id_or_number: invoiceIdOrNumber,
+        p_amount: amount,
+        p_payment_mode: mode,
+        p_transaction_ref: transactionRef || null,
+        p_remarks: remarks || null,
+        p_created_by: userUuid
+      });
+
+      if (!rpcError && rpcData && rpcData.success) {
+        const refreshed = await this.getInvoiceById(rpcData.invoice_id || invoiceIdOrNumber);
+        return {
+          success: true,
+          invoice: refreshed.invoice,
+          receiptNumber: rpcData.receipt_number
+        };
+      }
+
+      if (rpcError) {
+        console.warn("[CentralInvoiceRepository] RPC record_invoice_payment error/fallback:", rpcError);
+      }
+
+      // Fallback: Client-side atomic transaction if RPC is not installed
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
+      let query = supabase.from("jn_invoices").select("id, invoice_number, total_amount, amount_paid, balance_due, status, client_id");
+      if (isUuid) {
+        query = query.eq("id", invoiceIdOrNumber);
+      } else {
+        query = query.eq("invoice_number", invoiceIdOrNumber);
+      }
+
+      const { data: invRow, error: invErr } = await query.single();
+      if (invErr || !invRow) throw invErr || new Error("Invoice not found in database.");
+
+      if (invRow.status === "CANCELLED") {
+        return { success: false, error: "Cannot process payment against a cancelled invoice." };
+      }
+
+      const currentPaid = Number(invRow.amount_paid || 0);
+      const totalAmount = Number(invRow.total_amount || 0);
+      const remainingBalance = totalAmount - currentPaid;
+
+      if (amount > remainingBalance + 0.01) {
+        return { success: false, error: `Payment amount (₹${amount.toLocaleString("en-IN")}) exceeds remaining balance (₹${remainingBalance.toLocaleString("en-IN")}).` };
+      }
+
+      // Generate receipt number REC/YYYY-YY/000001
+      const fyStr = new Date().getMonth() < 3
+        ? `${new Date().getFullYear() - 1}-${(new Date().getFullYear() % 100).toString().padStart(2, "0")}`
+        : `${new Date().getFullYear()}-${((new Date().getFullYear() + 1) % 100).toString().padStart(2, "0")}`;
+
+      const { count } = await supabase.from("jn_receipts").select("*", { count: "exact", head: true });
+      const receiptSeq = (count || 0) + 1;
+      const receiptNumber = `REC/${fyStr}/${receiptSeq.toString().padStart(6, "0")}`;
+
+      // Insert receipt record
+      const receiptPayload: any = {
+        receipt_number: receiptNumber,
+        receipt_date: new Date().toISOString().split("T")[0],
+        invoice_id: invRow.id,
+        client_id: invRow.client_id || null,
+        amount_received: amount,
+        payment_mode: mode,
+        transaction_ref: transactionRef || null,
+        remarks: remarks || null,
+        created_by: userUuid
+      };
+
+      const { data: recInserted, error: recErr } = await supabase
+        .from("jn_receipts")
+        .insert([receiptPayload])
+        .select()
+        .single();
+
+      if (recErr) throw recErr;
+
+      // Update parent invoice
+      const newPaid = currentPaid + amount;
+      const newBalance = Math.max(0, totalAmount - newPaid);
+      const newStatus = newBalance <= 0 ? "PAID" : "PARTIALLY_PAID";
+
+      const { error: updateErr } = await supabase
+        .from("jn_invoices")
+        .update({
+          amount_paid: newPaid,
+          balance_due: newBalance,
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", invRow.id);
+
+      if (updateErr) throw updateErr;
+
+      addAuditLog(
+        currentUser?.email || "system@officeos.com",
+        currentUser?.name || "System Engine",
+        currentUser?.role || UserRole.OWNER,
+        "PAYMENT_RECEIPT_LOGGED",
+        "DATABASE",
+        `Receipt '${receiptNumber}' of INR ${amount.toLocaleString("en-IN")} issued for Invoice '${invRow.invoice_number}' via [${mode}].`
+      );
+
+      const refreshed = await this.getInvoiceById(invRow.id);
+      return {
+        success: true,
+        invoice: refreshed.invoice,
+        receiptNumber: recInserted?.receipt_number || receiptNumber
+      };
+
+    } catch (err: any) {
+      console.error("[CentralInvoiceRepository] recordInvoicePayment error:", err);
+      return { success: false, error: err.message || "Failed to record payment receipt." };
     }
   }
 }

@@ -902,73 +902,43 @@ export class FinancialRepository {
     return cloned;
   }
 
-  // Add Payment / Receipt
-  public static addInvoicePayment(
+  // Add Payment / Receipt (Authoritative Supabase Persistence + Local Sync)
+  public static async addInvoicePayment(
     invoiceId: string,
     amount: number,
     mode: InvoiceReceipt["mode"],
     transactionRef?: string,
     remarks?: string,
     currentUser?: User
-  ): Invoice {
+  ): Promise<{ success: boolean; invoice?: Invoice; receiptNumber?: string; error?: string }> {
     this.init();
 
-    const idx = this.invoicesCache.findIndex(inv => inv.id === invoiceId);
-    if (idx === -1) {
-      throw new Error(`Invoice with ID ${invoiceId} not found.`);
-    }
-
-    const invoice = this.invoicesCache[idx];
-    if (invoice.status === "Cancelled") {
-      throw new Error("Cannot process payment against a cancelled/void invoice.");
-    }
-
-    const todayStr = new Date().toISOString().split("T")[0];
-    const receiptId = this.generateNextReceiptNumber(todayStr);
-
-    const newPayment: InvoiceReceipt = {
-      id: receiptId,
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    const result = await CentralInvoiceRepository.recordInvoicePayment(
       invoiceId,
-      date: todayStr,
       amount,
       mode,
       transactionRef,
       remarks,
-      createdAt: new Date().toISOString()
-    };
+      currentUser
+    );
 
-    invoice.payments.push(newPayment);
-
-    // Compute status
-    const totalPaid = invoice.payments.reduce((sum, p) => sum + p.amount, 0);
-    if (totalPaid >= invoice.grandTotal) {
-      invoice.status = "Paid";
-    } else if (totalPaid > 0) {
-      invoice.status = "Partially Paid";
-    } else {
-      invoice.status = "Unpaid";
+    if (!result.success) {
+      throw new Error(result.error || "Payment recording failed.");
     }
 
-    invoice.updatedAt = new Date().toISOString();
-    this.invoicesCache[idx] = invoice;
-    this.persist();
-
-    // Sync to Case
-    this.syncInvoiceToCase(invoice, currentUser || { email: "system@officeos.com", name: "System Engine", role: UserRole.OWNER, id: "sys", permissions: {} as any, status: "ACTIVE", username: "system", mobile: "", designation: "", joiningDate: "", passwordHash: "", createdAt: "" });
-
-    // Audit Log
-    if (currentUser) {
-      addAuditLog(
-        currentUser.email,
-        currentUser.name,
-        currentUser.role,
-        "PAYMENT_RECEIPT_LOGGED",
-        "DATABASE",
-        `Receipt '${receiptId}' of INR ${amount.toLocaleString("en-IN")} issued for Invoice '${invoiceId}' via [${mode}].`
-      );
+    if (result.invoice) {
+      const idx = this.invoicesCache.findIndex(inv => inv.id === invoiceId || inv.uuid === invoiceId);
+      if (idx !== -1) {
+        this.invoicesCache[idx] = result.invoice;
+      } else {
+        this.invoicesCache.unshift(result.invoice);
+      }
+      this.persist();
+      this.syncInvoiceToCase(result.invoice, currentUser || { email: "system@officeos.com", name: "System Engine", role: UserRole.OWNER, id: "sys", permissions: {} as any, status: "ACTIVE", username: "system", mobile: "", designation: "", joiningDate: "", passwordHash: "", createdAt: "" });
     }
 
-    return invoice;
+    return result;
   }
 
   // Helper to keep CaseRepository completely aligned

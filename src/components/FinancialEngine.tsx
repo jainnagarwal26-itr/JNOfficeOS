@@ -103,6 +103,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
   const [paymentMode, setPaymentMode] = useState<InvoiceReceipt["mode"]>("UPI");
   const [paymentRef, setPaymentRef] = useState("");
   const [paymentRemarks, setPaymentRemarks] = useState("");
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // Load Data
   useEffect(() => {
@@ -1120,15 +1121,18 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     }
   };
 
-  // Receipt handler
-  const handleRecordPayment = (e: React.FormEvent) => {
+  // Receipt handler (Authoritative Supabase Payment Persistence)
+  const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (paymentAmount <= 0) {
       alert("Receipt amount must be positive.");
       return;
     }
+    if (isSubmittingPayment) return;
+
+    setIsSubmittingPayment(true);
     try {
-      FinancialRepository.addInvoicePayment(
+      const result = await FinancialRepository.addInvoicePayment(
         paymentInvoiceId,
         paymentAmount,
         paymentMode,
@@ -1136,21 +1140,36 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
         paymentRemarks,
         currentUser
       );
-      onAddAuditLog(
-        currentUser.email,
-        currentUser.name,
-        currentUser.role,
-        "FINANCIAL_RECEIPT_ISSUED",
-        "DATABASE",
-        `Logged payment of INR ${paymentAmount} against Invoice ${paymentInvoiceId}.`
-      );
-      refreshData();
-      setIsPaymentModalOpen(false);
-      setPaymentAmount(0);
-      setPaymentRef("");
-      setPaymentRemarks("");
+
+      if (result.success && result.invoice) {
+        onAddAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "FINANCIAL_RECEIPT_ISSUED",
+          "DATABASE",
+          `Logged payment of INR ${paymentAmount} against Invoice ${paymentInvoiceId}.`
+        );
+        await refreshData();
+        setIsPaymentModalOpen(false);
+        setPaymentAmount(0);
+        setPaymentRef("");
+        setPaymentRemarks("");
+
+        alert(
+          `✅ Receipt ${result.receiptNumber || 'Issued'} Successfully!\n\n` +
+          `Invoice ID: ${paymentInvoiceId}\n` +
+          `Amount Received: ₹${paymentAmount.toLocaleString("en-IN")}\n` +
+          `Payment Mode: ${paymentMode}\n` +
+          `Updated Invoice Status: ${result.invoice.status.toUpperCase()}\n` +
+          `Remaining Balance: ₹${(result.invoice.grandTotal - (result.invoice.payments?.reduce((s, p) => s + p.amount, 0) || 0)).toLocaleString("en-IN")}`
+        );
+      }
     } catch (err: any) {
-      alert(err.message || "Error processing payment.");
+      console.error("[FinancialEngine] Payment submission error:", err);
+      alert(`Payment recording failed: ${err.message || "Error processing payment."}`);
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -2500,9 +2519,21 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-md cursor-pointer"
+              disabled={isSubmittingPayment}
+              className={`px-5 py-2 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                isSubmittingPayment
+                  ? "bg-emerald-700 opacity-80 cursor-not-allowed"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
             >
-              Confirm Collection
+              {isSubmittingPayment ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Recording Payment...</span>
+                </>
+              ) : (
+                "Confirm Collection"
+              )}
             </button>
           </ModalFooter>
         </form>
