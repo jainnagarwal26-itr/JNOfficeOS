@@ -673,6 +673,7 @@ export function saveSettings(settings: FirmSettings): void {
 
 // Audit Logs DB Actions
 export function getAuditLogs(): AuditLog[] {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return [];
   const data = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
   return data ? JSON.parse(data) : [];
 }
@@ -701,7 +702,9 @@ export function addAuditLog(
   if (logs.length > 500) {
     logs.pop();
   }
-  localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+  if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+  }
 
   // Enterprise Supabase RDBMS Sync
   import("./supabaseService").then(({ supabaseService }) => {
@@ -723,19 +726,21 @@ export function addAuditLog(
         } else if (action === "USER_LOGOUT" || action === "SESSION_TIMEOUT") {
           eventType = "USER_LOGOUT";
         }
-      } else if (action.includes("CASE")) {
+      } else if (action && typeof action === "string" && action.includes("CASE")) {
         source = "Cases";
         if (action === "CASE_CREATED") {
           eventType = "CASE_CREATED";
           try {
-            const stored = localStorage.getItem("jn_officeos_cases");
-            if (stored) {
-              const cases = JSON.parse(stored);
-              if (cases.length > 0) {
-                payload = cases[0];
+            if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+              const stored = localStorage.getItem("jn_officeos_cases");
+              if (stored) {
+                const cases = JSON.parse(stored);
+                if (cases.length > 0) {
+                  payload = cases[0];
+                }
               }
             }
-          } catch (_) {}
+          } catch (e) {}
         } else if (action === "CASE_UPDATED") {
           if (details.includes("Completed") || details.includes("Status changed to Completed") || details.includes("status transitioned from") && details.includes("to 'Completed'")) {
             eventType = "CASE_COMPLETED";

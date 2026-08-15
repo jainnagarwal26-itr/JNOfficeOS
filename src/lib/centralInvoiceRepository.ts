@@ -8,6 +8,7 @@ import { supabase, isSupabaseConfigured } from "./supabase";
 import { getClients, addAuditLog } from "./db";
 import { Invoice, InvoiceItem } from "./financialRepository";
 import { numberToWords } from "./numberToWords";
+import { UserRole } from "../types";
 
 export interface CreateCentralInvoicePayload {
   clientId?: string | null; // Canonical UUID or client_number (will resolve to UUID)
@@ -373,6 +374,9 @@ export class CentralInvoiceRepository {
 
         if (!rpcErr && rpcRes && rpcRes.success) {
           addAuditLog(
+            "system@jn.internal",
+            "Central Invoice Engine",
+            UserRole.OWNER,
             "INVOICE_CREATED",
             "DATABASE",
             `Created central invoice ${rpcRes.invoice_number} for client ${clientName} via module ${payload.sourceModule}`
@@ -475,6 +479,9 @@ export class CentralInvoiceRepository {
         }
 
         addAuditLog(
+          "system@jn.internal",
+          "Central Invoice Engine",
+          UserRole.OWNER,
           "INVOICE_CREATED",
           "DATABASE",
           `Created central invoice ${invoiceNumber} for client ${clientName} via ${payload.sourceModule}`
@@ -506,7 +513,7 @@ export class CentralInvoiceRepository {
   public static async updateInvoice(
     invoiceIdOrNumber: string,
     payload: Partial<CreateCentralInvoicePayload> & { newInvoiceNumber?: string }
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; invoice?: Invoice }> {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
 
     try {
@@ -567,6 +574,9 @@ export class CentralInvoiceRepository {
       }
 
       addAuditLog(
+        "system@jn.internal",
+        "Central Invoice Engine",
+        UserRole.OWNER,
         "INVOICE_UPDATED",
         "DATABASE",
         `Updated invoice ${updatedHeader.invoice_number} in backend Supabase database`
@@ -605,6 +615,9 @@ export class CentralInvoiceRepository {
         await supabase.from("jn_invoices").delete().eq("id", target.id);
 
         addAuditLog(
+          "system@jn.internal",
+          "Central Invoice Engine",
+          UserRole.OWNER,
           "INVOICE_DELETED",
           "DATABASE",
           `Permanently deleted invoice ${target.invoice_number} from Supabase database`

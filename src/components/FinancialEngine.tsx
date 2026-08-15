@@ -19,6 +19,8 @@ import { CaseRepository } from "../lib/repository";
 import { FinancialRepository, Invoice, InvoiceItem, InvoiceReceipt, ClientLedgerEntry } from "../lib/financialRepository";
 import { numberToWords } from "../lib/numberToWords";
 import { hasPermission } from "../lib/permissions";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 import { WorkspaceLayout } from "./WorkspaceLayout";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ModalFramework";
 
@@ -213,6 +215,72 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
   const handleRemoveItem = (index: number) => {
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
   };
+
+  // In-place update item field with instant GST recalculation
+  const handleUpdateItemField = (index: number, field: string, value: any) => {
+    setInvoiceItems(prev => {
+      const updated = [...prev];
+      const target = { ...updated[index], [field]: value };
+
+      const qty = field === "quantity" ? Math.max(1, parseInt(value) || 1) : target.quantity;
+      const rate = field === "rate" ? Math.max(0, parseFloat(value) || 0) : target.rate;
+      const discount = field === "discount" ? Math.max(0, parseFloat(value) || 0) : target.discount;
+      const gstRate = field === "gstRate" ? parseInt(value) : target.gstRate;
+
+      target.quantity = qty;
+      target.rate = rate;
+      target.discount = discount;
+      target.gstRate = gstRate;
+
+      const { cgst, sgst, igst, cess } = computeItemGst(rate, qty, discount, gstRate, isInterState);
+      target.cgst = cgst;
+      target.sgst = sgst;
+      target.igst = igst;
+      target.cess = cess;
+
+      updated[index] = target;
+      return updated;
+    });
+  };
+
+  // Calculate live invoice totals for real-time recalculation in the modal
+  const liveTotals = React.useMemo(() => {
+    let subTotal = 0;
+    let cgstSum = 0;
+    let sgstSum = 0;
+    let igstSum = 0;
+    let cessSum = 0;
+
+    invoiceItems.forEach(item => {
+      const qty = Number(item.quantity || 1);
+      const rate = Number(item.rate || 0);
+      const discount = Number(item.discount || 0);
+      subTotal += qty * rate;
+      cgstSum += Number(item.cgst || 0);
+      sgstSum += Number(item.sgst || 0);
+      igstSum += Number(item.igst || 0);
+      cessSum += Number(item.cess || 0);
+    });
+
+    const netTaxable = Math.max(0, subTotal - (discountAmount || 0));
+    const totalGst = cgstSum + sgstSum + igstSum + cessSum;
+    const rawGrandTotal = netTaxable + totalGst;
+    const grandTotal = Math.round(rawGrandTotal);
+    const roundOff = parseFloat((grandTotal - rawGrandTotal).toFixed(2));
+    const words = numberToWords(grandTotal);
+
+    return {
+      subTotal,
+      netTaxable,
+      cgstSum,
+      sgstSum,
+      igstSum,
+      totalGst,
+      grandTotal,
+      roundOff,
+      words
+    };
+  }, [invoiceItems, discountAmount]);
 
   // Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -481,139 +549,71 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     }
   };
 
-  // Download Invoice as PDF using client-side html2pdf with CDN fallback to bypass iframe issues
+  // Download Invoice as PDF using native client-side html2canvas & jsPDF
   const handleDownloadPDF = async () => {
     const printContent = document.getElementById("printable_invoice_canvas");
-    if (!printContent) return;
+    if (!printContent || !viewInvoice) return;
     setIsDownloading(true);
 
     try {
-      // Create a clean, isolated iframe so html2canvas doesn't parse main document styles (which contain oklch/oklab)
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.bottom = "0";
-      iframe.style.right = "0";
-      iframe.style.width = "850px"; // Fixed width to ensure robust layout rendering
-      iframe.style.height = "1100px";
-      iframe.style.border = "none";
-      iframe.style.visibility = "hidden";
-      iframe.style.zIndex = "-9999";
-      document.body.appendChild(iframe);
+      // 1. Sanitize filename: e.g. JNA-2026-27-000006-Akshay-Shyam-Sharma.pdf
+      const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      const cleanNum = sanitize(viewInvoice.id);
+      const cleanClient = sanitize(viewInvoice.clientName || "Client");
+      const filename = `${cleanNum}-${cleanClient}.pdf`;
 
-      const doc = iframe.contentWindow?.document;
-      if (!doc) throw new Error("Could not access iframe document");
+      // 2. Render visible canvas into high-res canvas (2x scale for sharp text)
+      const canvas = await html2canvas(printContent, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff"
+      });
 
-      doc.open();
-      doc.write(`
-        <html>
-          <head>
-            <title>Invoice - ${viewInvoice?.id || 'Tax Invoice'}</title>
-            <link rel="preconnect" href="https://fonts.googleapis.com">
-            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-            <script src="https://cdn.tailwindcss.com"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-            <script>
-              tailwind.config = {
-                theme: {
-                  extend: {
-                    fontFamily: {
-                      sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-                      display: ["Outfit", "sans-serif"],
-                      mono: ["JetBrains Mono", "ui-monospace", "monospace"]
-                    }
-                  }
-                }
-              }
-            </script>
-            <style>
-              body {
-                background: white;
-                color: #1e293b;
-                padding: 30px;
-                font-family: 'Inter', sans-serif;
-              }
-              * {
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-            </style>
-          </head>
-          <body class="bg-white p-2 font-sans text-xs text-slate-800">
-            <div id="pdf-container" class="max-w-4xl mx-auto">
-              ${printContent.innerHTML}
-            </div>
-            <script>
-              window.onload = function() {
-                setTimeout(function() {
-                  const element = document.getElementById("pdf-container");
-                  const opt = {
-                    margin: [10, 10, 10, 10],
-                    filename: "Invoice_${viewInvoice?.id?.replace(/\//g, "_") || 'Tax_Invoice'}.pdf",
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { 
-                      scale: 2, 
-                      useCORS: true, 
-                      letterRendering: true,
-                      logging: false,
-                      scrollY: 0,
-                      scrollX: 0
-                    },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                  };
-                  
-                  window.html2pdf().set(opt).from(element).save().then(function() {
-                    window.parent.postMessage({ type: 'PDF_DOWNLOAD_COMPLETE', success: true }, '*');
-                  }).catch(function(err) {
-                    window.parent.postMessage({ type: 'PDF_DOWNLOAD_COMPLETE', success: false, error: err.toString() }, '*');
-                  });
-                }, 800);
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      doc.close();
+      // 3. Convert to PDF using jsPDF (A4 standard portrait)
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
 
-      // Wait for completion from within the iframe
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data && event.data.type === 'PDF_DOWNLOAD_COMPLETE') {
-          window.removeEventListener('message', handleMessage);
-          if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe);
-          }
-          setIsDownloading(false);
-          if (!event.data.success) {
-            console.error("PDF generation failed inside iframe:", event.data.error);
-            alert("Direct PDF download failed. Attempting print view as fallback.");
-            handlePrintInvoice();
-          }
-        }
-      };
+      const pageWidth = 210; // mm
+      const pageHeight = 297; // mm
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
 
-      window.addEventListener('message', handleMessage);
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
 
-      // Safe fallback timer (25 seconds)
-      setTimeout(() => {
-        window.removeEventListener('message', handleMessage);
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-          setIsDownloading(false);
-        }
-      }, 25000);
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
 
+      // 4. Trigger download
+      pdf.save(filename);
     } catch (err: any) {
-      console.error("PDF generation failed:", err);
+      console.error("[FinancialEngine] PDF generation error:", err);
+      alert(`PDF generation failed: ${err.message || err.toString()}`);
+    } finally {
       setIsDownloading(false);
-      alert("Direct PDF download failed. Attempting print view as fallback.");
-      handlePrintInvoice();
     }
   };
 
-  // Print Invoice using isolated Iframe to work beautifully in all browsers and iframes
+  // Print Invoice using dedicated isolated print iframe
   const handlePrintInvoice = () => {
     const printContent = document.getElementById("printable_invoice_canvas");
-    if (!printContent) return;
+    if (!printContent || !viewInvoice) return;
+
+    const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    const cleanNum = sanitize(viewInvoice.id);
+    const cleanClient = sanitize(viewInvoice.clientName || "Client");
+    const printTitle = `Invoice-${cleanNum}-${cleanClient}`;
 
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
@@ -630,47 +630,19 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
     doc.open();
     doc.write(`
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>Invoice - ${viewInvoice?.id || 'Tax Invoice'}</title>
+          <title>${printTitle}</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
           <script src="https://cdn.tailwindcss.com"></script>
-          <script>
-            tailwind.config = {
-              theme: {
-                extend: {
-                  fontFamily: {
-                    sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-                    display: ["Outfit", "sans-serif"],
-                    mono: ["JetBrains Mono", "ui-monospace", "monospace"]
-                  }
-                }
-              }
-            }
-          </script>
           <style>
-            body {
-              background: white;
-              color: #1e293b;
-              padding: 40px;
-              font-family: 'Inter', sans-serif;
-            }
-            @media print {
-              body {
-                padding: 0;
-                margin: 0;
-              }
-              @page {
-                size: A4;
-                margin: 15mm;
-              }
-            }
-            * {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { font-family: 'Inter', sans-serif; background: #fff; color: #1e293b; margin: 0; padding: 24px; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; }
+            @page { size: A4; margin: 12mm; }
           </style>
         </head>
         <body class="bg-white p-4 font-sans text-xs text-slate-800">
@@ -681,7 +653,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
             window.onload = function() {
               setTimeout(function() {
                 window.print();
-              }, 500);
+              }, 400);
             };
           </script>
         </body>
@@ -689,9 +661,11 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     `);
     doc.close();
 
-    // Clean up
+    // Clean up iframe after printing
     setTimeout(() => {
-      document.body.removeChild(iframe);
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
     }, 15000);
   };
 
@@ -1762,48 +1736,141 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
 
               <div className="border border-slate-100 bg-slate-50/50 p-4 rounded-2xl space-y-4">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                  <span className="text-[10px] font-bold text-[#0D2C6C] uppercase tracking-wider">Service Line Items ({invoiceItems.length})</span>
-                  <span className="text-[10px] text-slate-400 font-semibold italic">Configure item rates & GST rates</span>
+                  <span className="text-[10px] font-bold text-[#0D2C6C] uppercase tracking-wider">
+                    Service Line Items ({invoiceItems.length})
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold italic">
+                    Edit existing items or add new items below
+                  </span>
                 </div>
 
-                {/* Render added items */}
-                <div className="space-y-2">
+                {/* Render added / existing items as fully editable cards */}
+                <div className="space-y-3">
                   {invoiceItems.length === 0 ? (
                     <div className="text-center p-4 bg-white border border-dashed border-slate-200 rounded-xl text-slate-400 font-medium text-[11px]">
                       No service items inserted yet. Add a service item below.
                     </div>
                   ) : (
                     invoiceItems.map((item, index) => {
-                      const taxableVal = item.quantity * item.rate - item.discount;
-                      const cgstAmt = item.cgst;
-                      const sgstAmt = item.sgst;
-                      const igstAmt = item.igst;
+                      const taxableVal = Math.max(0, item.quantity * item.rate - item.discount);
+                      const cgstAmt = item.cgst || 0;
+                      const sgstAmt = item.sgst || 0;
+                      const igstAmt = item.igst || 0;
                       const total = taxableVal + cgstAmt + sgstAmt + igstAmt;
 
                       return (
-                        <div key={index} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                          <div className="max-w-[70%]">
-                            <div className="font-bold text-[#0D2C6C]">{item.serviceName}</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5 font-medium line-clamp-1">{item.description}</div>
-                            <div className="text-[9px] text-slate-400 mt-1 font-semibold">
-                              Qty: {item.quantity} • Rate: ₹{item.rate.toLocaleString("en-IN")} • Disc: ₹{item.discount} • Taxable: ₹{taxableVal.toLocaleString("en-IN")}
-                              {item.igst > 0 ? ` (IGST ${item.gstRate}%)` : ` (CGST+SGST ${item.gstRate}%)`}
+                        <div key={index} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2.5">
+                          {/* Item Header & Delete Button */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-black text-[#0D2C6C] uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded">
+                              Item #{index + 1}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <span className="text-xs font-black text-slate-800">₹{total.toLocaleString("en-IN")}</span>
+                                <span className="block text-[8px] text-slate-400 font-semibold">Total Incl. GST</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(index)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
 
-                          <div className="text-right shrink-0 flex items-center gap-4">
+                          {/* Editable Service Name & Description */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <div>
-                              <span className="font-bold text-slate-800">₹{total.toLocaleString("en-IN")}</span>
-                              <span className="block text-[8px] text-slate-400 font-semibold">Incl GST</span>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Service Name *</label>
+                              <input
+                                type="text"
+                                value={item.serviceName}
+                                onChange={(e) => handleUpdateItemField(index, "serviceName", e.target.value)}
+                                placeholder="Service Name..."
+                                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#0D2C6C] bg-slate-50/30"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Description</label>
+                              <input
+                                type="text"
+                                value={item.description || ""}
+                                onChange={(e) => handleUpdateItemField(index, "description", e.target.value)}
+                                placeholder="Brief description / notes..."
+                                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-[#0D2C6C] bg-slate-50/30"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Editable Numerical Fields: Qty, Rate, Discount, GST Rate, Taxable & Taxes */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1 border-t border-slate-100 items-end">
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Qty</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => handleUpdateItemField(index, "quantity", e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                              />
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItem(index)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                            >
-                              <Trash className="w-4 h-4" />
-                            </button>
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Rate (₹)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.rate}
+                                onChange={(e) => handleUpdateItemField(index, "rate", e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Discount (₹)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.discount}
+                                onChange={(e) => handleUpdateItemField(index, "discount", e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">GST Rate</label>
+                              <select
+                                value={item.gstRate}
+                                onChange={(e) => handleUpdateItemField(index, "gstRate", e.target.value)}
+                                className="w-full px-1.5 py-1 border border-slate-200 rounded-lg text-xs text-slate-800 bg-white focus:outline-none focus:border-[#0D2C6C] cursor-pointer"
+                              >
+                                <option value="0">0% Exempt</option>
+                                <option value="5">5% Lower</option>
+                                <option value="12">12% Std I</option>
+                                <option value="18">18% Std II</option>
+                                <option value="28">28% Prem</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Taxable Val</label>
+                              <div className="px-2 py-1 bg-slate-100/70 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 truncate">
+                                ₹{taxableVal.toLocaleString("en-IN")}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                                {item.igst > 0 ? "IGST" : "CGST+SGST"}
+                              </label>
+                              <div className="px-2 py-1 bg-slate-100/70 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 truncate">
+                                ₹{(cgstAmt + sgstAmt + igstAmt).toLocaleString("en-IN")}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1811,9 +1878,11 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                   )}
                 </div>
 
-                {/* Single Item inputs form */}
+                {/* Add New Item Inputs Form */}
                 <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-[#D4AF37]">Add Professional Service Item</span>
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-[#D4AF37]">
+                    + Add Professional Service Item
+                  </span>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <input
@@ -1911,6 +1980,31 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                   className="w-full md:w-1/3 px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-xs text-slate-800 focus:outline-none focus:border-[#0D2C6C]"
                   placeholder="Enter flat deduction amount..."
                 />
+              </div>
+            </div>
+
+            {/* 5. Live Invoice Calculation Breakdown */}
+            <div className="bg-[#0D2C6C]/5 p-4 rounded-xl border border-[#0D2C6C]/10 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-600">Total Billed Base (Subtotal):</span>
+                <span className="font-mono font-bold text-slate-800">₹{liveTotals.subTotal.toLocaleString("en-IN")}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between items-center text-xs text-rose-600">
+                  <span className="font-bold">Ad-hoc Flat Discount:</span>
+                  <span className="font-mono font-bold">- ₹{discountAmount.toLocaleString("en-IN")}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-600">Total GST Taxes:</span>
+                <span className="font-mono font-bold text-slate-800">₹{liveTotals.totalGst.toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm pt-2 border-t border-[#0D2C6C]/10">
+                <span className="font-black text-[#0D2C6C] uppercase tracking-wide">Grand Outstanding Total:</span>
+                <span className="font-mono font-black text-[#0D2C6C] text-base">₹{liveTotals.grandTotal.toLocaleString("en-IN")}</span>
+              </div>
+              <div className="text-[10px] text-slate-500 font-semibold italic">
+                In Words: {liveTotals.words}
               </div>
             </div>
           </ModalBody>

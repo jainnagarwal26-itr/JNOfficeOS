@@ -100,37 +100,38 @@ export class FinancialRepository {
   private static init() {
     if (this.isInitialized) return;
     
-    const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
-    if (stored) {
-      try {
-        const parsed: Invoice[] = JSON.parse(stored);
-        this.invoicesCache = Array.isArray(parsed) ? parsed : [];
-      } catch (e) {
-        console.error("Failed to parse stored invoices", e);
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
+      if (stored) {
+        try {
+          const parsed: Invoice[] = JSON.parse(stored);
+          this.invoicesCache = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          console.error("Failed to parse stored invoices", e);
+          this.invoicesCache = [];
+        }
+      } else {
         this.invoicesCache = [];
+        localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
       }
     } else {
       this.invoicesCache = [];
-      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
     }
     this.isInitialized = true;
   }
 
   public static clearAllInvoices(): void {
     this.invoicesCache = [];
-    localStorage.removeItem(STORAGE_KEYS.INVOICES);
-    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      localStorage.removeItem(STORAGE_KEYS.INVOICES);
+      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
+    }
   }
 
   private static persist() {
-    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(this.invoicesCache));
-
-    // Real-Time Enterprise Supabase RDBMS Sync
-    import("./supabaseService").then(({ supabaseService }) => {
-      this.invoicesCache.forEach(inv => {
-        supabaseService.upsertInvoice(inv);
-      });
-    });
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(this.invoicesCache));
+    }
   }
 
   // Fallback seeder to fetch any invoices existing in Case Management
@@ -973,6 +974,7 @@ export class FinancialRepository {
   // Helper to keep CaseRepository completely aligned
   private static syncInvoiceToCase(inv: Invoice, currentUser: User) {
     try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return;
       const casesStr = localStorage.getItem("jn_officeos_cases");
       if (casesStr) {
         const cases = JSON.parse(casesStr);
@@ -990,7 +992,7 @@ export class FinancialRepository {
             gstAmount: inv.cgstAmount + inv.sgstAmount + inv.igstAmount,
             totalAmount: inv.grandTotal,
             status: inv.status === "Paid" ? "PAID" : "UNPAID",
-            payments: inv.payments.map(p => ({
+            payments: (inv.payments || []).map(p => ({
               id: p.id,
               date: p.date,
               amount: p.amount,
