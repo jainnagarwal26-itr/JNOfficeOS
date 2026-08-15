@@ -549,12 +549,13 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     }
   };
 
-  // Download Invoice as PDF using native client-side html2canvas & jsPDF
+  // Download Invoice as PDF using isolated iframe to bypass Tailwind v4 oklch parsing error in html2canvas
   const handleDownloadPDF = async () => {
     const printContent = document.getElementById("printable_invoice_canvas");
     if (!printContent || !viewInvoice) return;
     setIsDownloading(true);
 
+    let iframe: HTMLIFrameElement | null = null;
     try {
       // 1. Sanitize filename: e.g. JNA-2026-27-000006-Akshay-Shyam-Sharma.pdf
       const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -562,15 +563,77 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       const cleanClient = sanitize(viewInvoice.clientName || "Client");
       const filename = `${cleanNum}-${cleanClient}.pdf`;
 
-      // 2. Render visible canvas into high-res canvas (2x scale for sharp text)
-      const canvas = await html2canvas(printContent, {
+      // 2. Create isolated offscreen iframe with standard non-oklch styles
+      iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "0";
+      iframe.style.width = "850px";
+      iframe.style.height = "1200px";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) throw new Error("Could not access iframe document context.");
+
+      doc.open();
+      doc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #ffffff; color: #1e293b; padding: 24px; font-size: 11px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
+              th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; color: #334155; }
+              th { background-color: #f8fafc; font-weight: bold; color: #1e293b; }
+              .text-right { text-align: right; }
+              .text-center { text-align: center; }
+              .font-bold { font-weight: bold; }
+              .font-black { font-weight: 900; }
+              .font-semibold { font-weight: 600; }
+              .uppercase { text-transform: uppercase; }
+              .text-slate-800 { color: #1e293b; }
+              .text-slate-700 { color: #334155; }
+              .text-slate-600 { color: #475569; }
+              .text-slate-500 { color: #64748b; }
+              .text-slate-400 { color: #94a3b8; }
+              .text-blue-900, .text-\\[\\#0D2C6C\\] { color: #0D2C6C; }
+              .bg-slate-50 { background-color: #f8fafc; }
+              .bg-slate-100 { background-color: #f1f5f9; }
+              .border-slate-200 { border-color: #e2e8f0; }
+              .border-slate-100 { border-color: #f1f5f9; }
+              .grid { display: grid; }
+              .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+              .gap-4 { gap: 1rem; }
+              .gap-6 { gap: 1.5rem; }
+              .flex { display: flex; }
+              .items-center { align-items: center; }
+              .justify-between { justify-content: space-between; }
+            </style>
+          </head>
+          <body>
+            <div id="pdf-invoice-root" style="width: 800px; background: #ffffff; color: #1e293b;">
+              ${printContent.innerHTML}
+            </div>
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      // Allow iframe DOM layout to compute
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      const targetEl = doc.getElementById("pdf-invoice-root") || doc.body;
+
+      const canvas = await html2canvas(targetEl, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: "#ffffff"
+        backgroundColor: "#ffffff",
+        windowWidth: 850
       });
 
-      // 3. Convert to PDF using jsPDF (A4 standard portrait)
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -595,12 +658,14 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
         heightLeft -= pageHeight;
       }
 
-      // 4. Trigger download
       pdf.save(filename);
     } catch (err: any) {
       console.error("[FinancialEngine] PDF generation error:", err);
       alert(`PDF generation failed: ${err.message || err.toString()}`);
     } finally {
+      if (iframe && document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
       setIsDownloading(false);
     }
   };
