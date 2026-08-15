@@ -3,7 +3,9 @@
 -- Description: Sequence generator, locking mechanism, and atomic transaction for payment receipts
 -- ==============================================================================
 
--- 1. RECEIPT NUMBER SEQUENCE GENERATOR
+-- 1. RECEIPT NUMBER SEQUENCE GENERATOR & TABLE ALTERATIONS
+ALTER TABLE public.jn_receipts ALTER COLUMN client_id DROP NOT NULL;
+
 CREATE SEQUENCE IF NOT EXISTS seq_jn_receipt_number START WITH 1 INCREMENT BY 1;
 
 CREATE OR REPLACE FUNCTION generate_next_receipt_number(fy_str TEXT DEFAULT '2026-27')
@@ -139,3 +141,13 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql;
+
+-- 3. RLS POLICIES FOR RECEIPTS
+ALTER TABLE public.jn_receipts ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+    CREATE POLICY "Allow full access to jn_receipts"
+    ON public.jn_receipts FOR ALL
+    USING (true)
+    WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;

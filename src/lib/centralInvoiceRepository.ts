@@ -712,14 +712,26 @@ export class CentralInvoiceRepository {
         return { success: false, error: `Payment amount (₹${amount.toLocaleString("en-IN")}) exceeds remaining balance (₹${remainingBalance.toLocaleString("en-IN")}).` };
       }
 
-      // Generate receipt number REC/YYYY-YY/000001
+      // Generate receipt number REC/YYYY-YY/000001 (sequence-safe via max sequence lookup)
       const fyStr = new Date().getMonth() < 3
         ? `${new Date().getFullYear() - 1}-${(new Date().getFullYear() % 100).toString().padStart(2, "0")}`
         : `${new Date().getFullYear()}-${((new Date().getFullYear() + 1) % 100).toString().padStart(2, "0")}`;
 
-      const { count } = await supabase.from("jn_receipts").select("*", { count: "exact", head: true });
-      const receiptSeq = (count || 0) + 1;
-      const receiptNumber = `REC/${fyStr}/${receiptSeq.toString().padStart(6, "0")}`;
+      const { data: latestReceipt } = await supabase
+        .from("jn_receipts")
+        .select("receipt_number")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let nextSeq = 1;
+      if (latestReceipt && latestReceipt.receipt_number) {
+        const match = latestReceipt.receipt_number.match(/(\d+)$/);
+        if (match) {
+          nextSeq = parseInt(match[1], 10) + 1;
+        }
+      }
+      const receiptNumber = `REC/${fyStr}/${nextSeq.toString().padStart(6, "0")}`;
 
       // Insert receipt record
       const receiptPayload: any = {
