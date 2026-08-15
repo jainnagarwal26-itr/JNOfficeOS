@@ -549,117 +549,368 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     }
   };
 
-  // Helper function to sanitize any modern CSS color functions (oklch, oklab, lch, lab) into standard RGB/HEX for html2canvas compatibility
-  const sanitizeClonedDocForPDF = (clonedDoc: Document) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext("2d");
+  // Generate dedicated, pure-CSS, 100% self-contained invoice HTML for both PDF and Print (zero Tailwind/oklch dependencies)
+  const generateCleanInvoiceHTML = (
+    inv: Invoice,
+    matchedClient?: any,
+    options?: { forPrint?: boolean; title?: string }
+  ): string => {
+    const clientAddress = matchedClient
+      ? [matchedClient.officeAddress, matchedClient.city, matchedClient.state, matchedClient.pinCode].filter(Boolean).join(", ")
+      : (inv.walkInAddress || "Office/Corporate premises registered on system.");
+      
+    const clientGstin = matchedClient?.gstin || inv.walkInGstin || (inv.clientId ? "Exempt / Non-Registered" : "Exempt / Non-Registered");
+    const clientMobile = matchedClient?.mobile || inv.walkInMobile || "";
+    const clientEmail = matchedClient?.email || "";
+    const clientState = matchedClient?.state || "Maharashtra";
+    const stateCode = clientGstin && clientGstin.length >= 2 && !isNaN(Number(clientGstin.substring(0, 2))) 
+      ? clientGstin.substring(0, 2) 
+      : "27";
 
-    const toRgb = (colorStr: string): string => {
-      if (!colorStr || typeof colorStr !== "string") return colorStr;
-      if (!colorStr.includes("oklch") && !colorStr.includes("oklab") && !colorStr.includes("lch") && !colorStr.includes("lab")) {
-        return colorStr;
-      }
-      if (!ctx) return "#1e293b";
-      try {
-        ctx.fillStyle = "#000000";
-        ctx.fillStyle = colorStr;
-        return ctx.fillStyle; // Native browser engine converts oklch to rgb/rgba!
-      } catch {
-        return "#1e293b";
-      }
-    };
+    const sealHash = generateHashSync(`${inv.id}|${inv.date}|${inv.grandTotal}|${inv.clientName}|MyFirmSecureKey2026!`).substring(0, 8).toUpperCase();
 
-    const sanitizeComplex = (str: string): string => {
-      if (!str || typeof str !== "string") return str;
-      if (!str.includes("oklch") && !str.includes("oklab") && !str.includes("lch") && !str.includes("lab")) {
-        return str;
-      }
-      return str.replace(/(?:oklch|oklab|lch|lab)\([^)]+\)/gi, (match) => toRgb(match));
-    };
+    // Extract the rendered QR Code SVGs from the DOM if available
+    const printableEl = document.getElementById("printable_invoice_canvas");
+    const qrSvgs = printableEl ? printableEl.querySelectorAll("svg") : [];
+    const paymentQrHtml = qrSvgs[0] ? qrSvgs[0].outerHTML : "";
+    const sealQrHtml = qrSvgs[1] ? qrSvgs[1].outerHTML : "";
 
-    // 1. Sanitize all style tags inside clonedDoc
-    clonedDoc.querySelectorAll("style").forEach((styleEl) => {
-      if (styleEl.textContent && (styleEl.textContent.includes("oklch") || styleEl.textContent.includes("oklab") || styleEl.textContent.includes("lch") || styleEl.textContent.includes("lab"))) {
-        styleEl.textContent = sanitizeComplex(styleEl.textContent);
-      }
-    });
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${options?.title || inv.id}</title>
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #1e293b; font-size: 11px; line-height: 1.4; padding: 24px; }
+            .invoice-box { width: 100%; max-width: 800px; margin: 0 auto; background: #ffffff; }
+            .header-grid { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 16px; }
+            .firm-info { display: flex; align-items: flex-start; gap: 12px; }
+            .logo-box { width: 44px; height: 44px; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+            .logo-img { width: 100%; height: 100%; object-fit: contain; }
+            .firm-title { font-size: 14px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 0.5px; }
+            .firm-subtitle { font-size: 8px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 1px; }
+            .firm-desc { font-size: 9.5px; color: #64748b; font-weight: 500; margin-top: 4px; max-width: 320px; line-height: 1.3; }
+            .firm-contact { font-size: 9px; color: #94a3b8; font-weight: 600; margin-top: 4px; }
+            .invoice-meta { text-align: right; }
+            .invoice-type { font-size: 18px; font-weight: 900; color: #0D2C6C; text-transform: uppercase; letter-spacing: 1px; }
+            .meta-box { display: inline-block; background: #f8fafc; border: 1px solid #f1f5f9; padding: 8px 12px; border-radius: 8px; margin-top: 6px; text-align: left; font-size: 9.5px; }
+            .meta-row { margin-bottom: 2px; }
+            .meta-label { color: #475569; font-weight: 600; }
+            .meta-val { font-weight: 800; color: #0D2C6C; font-family: monospace; }
+            .details-grid { display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 16px; font-size: 10px; }
+            .client-col { width: 55%; }
+            .compliance-col { width: 40%; text-align: right; }
+            .section-tag { font-size: 8px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+            .client-name { font-size: 12px; font-weight: 900; color: #0D2C6C; }
+            .client-text { color: #64748b; font-weight: 600; line-height: 1.4; margin-top: 2px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+            .items-table th { background: #f8fafc; color: #334155; font-size: 9px; font-weight: 900; text-transform: uppercase; border: 1px solid #cbd5e1; padding: 6px 8px; }
+            .items-table td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 9.5px; color: #334155; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            .font-black { font-weight: 900; }
+            .words-box { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 9.5px; color: #334155; font-weight: bold; }
+            .footer-grid { display: flex; justify-content: space-between; border-top: 1px solid #cbd5e1; padding-top: 16px; margin-top: 8px; font-size: 9.5px; }
+            .bank-col { width: 35%; }
+            .bank-card { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-size: 9px; line-height: 1.5; color: #475569; font-weight: bold; }
+            .qr-col { width: 30%; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+            .qr-card { background: #ffffff; border: 1px solid #f1f5f9; border-radius: 8px; padding: 6px; display: inline-block; margin-top: 4px; }
+            .sign-col { width: 30%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; }
+            .seal-badge { font-size: 7.5px; color: #D4AF37; background: #f8fafc; border: 1px solid #f1f5f9; padding: 3px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 8px; }
+            .sign-line { width: 120px; border-bottom: 1px dashed #94a3b8; margin-bottom: 4px; }
+            .terms-box { border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 16px; font-size: 8px; color: #94a3b8; line-height: 1.4; }
+            @page { size: A4 portrait; margin: 10mm 12mm; }
+            @media print {
+              body { padding: 0 !important; background: #fff !important; }
+              .avoid-break { page-break-inside: avoid; break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-box" id="invoice-capture-box">
+            <!-- 1. Header Banner -->
+            <div class="header-grid">
+              <div class="firm-info">
+                <div class="logo-box">
+                  <img src="/logo.jpeg" alt="Logo" class="logo-img" />
+                </div>
+                <div>
+                  <div class="firm-title">Jain Agarwal & Co.</div>
+                  <div class="firm-subtitle">TAX & FINANCIAL CONSULTANTS</div>
+                  <div class="firm-desc">
+                    Shop No. A6 & A7, Shree Sai Niketan CHS Ltd, Off Shriram Jewellers, Navghar Road, Bhayander East, Thane, Maharashtra 401105.
+                  </div>
+                  <div class="firm-contact">
+                    Website: www.jainnagarwal.in • Contact: +91 8828147889 • Email: jainnagarwal90@gmail.com
+                  </div>
+                </div>
+              </div>
+              <div class="invoice-meta">
+                <div class="invoice-type">${inv.type || "TAX INVOICE"}</div>
+                <div class="meta-box">
+                  <div class="meta-row"><span class="meta-label">Invoice Ref:</span> <span class="meta-val">${inv.id}</span></div>
+                  <div class="meta-row"><span class="meta-label">Issue Date:</span> <strong style="color: #1e293b;">${inv.date}</strong></div>
+                  <div class="meta-row"><span class="meta-label">Due Date:</span> <strong style="color: #e11d48;">${inv.dueDate}</strong></div>
+                  <div class="meta-row"><span class="meta-label">Workflow ID:</span> <span style="font-family: monospace; color: #64748b;">${inv.workflowId || "WF_SYNC_01"}</span></div>
+                </div>
+              </div>
+            </div>
 
-    // 2. Sanitize all computed and inline styles across all DOM elements in clonedDoc
-    const colorProps = [
-      "color",
-      "backgroundColor",
-      "borderColor",
-      "borderTopColor",
-      "borderRightColor",
-      "borderBottomColor",
-      "borderLeftColor",
-      "outlineColor",
-      "textDecorationColor",
-      "fill",
-      "stroke"
-    ];
+            <!-- 2. Client & Compliance Linkage -->
+            <div class="details-grid">
+              <div class="client-col">
+                <div class="section-tag">BILLED TO (CLIENT RECIPIENT)</div>
+                <div class="client-name">${inv.clientName}</div>
+                <div class="client-text">Address: ${clientAddress}</div>
+                <div class="client-text" style="font-weight: 700; color: #334155; margin-top: 4px;">
+                  <div>GSTIN/UID: ${clientGstin}</div>
+                  ${clientMobile ? `<div>Mobile: +91 ${clientMobile}</div>` : ""}
+                  ${clientEmail ? `<div>Email: ${clientEmail}</div>` : ""}
+                  <div>State Code: ${stateCode} (${clientState})</div>
+                </div>
+              </div>
+              <div class="compliance-col">
+                <div class="section-tag">COMPLIANCE REFERENCE LINKAGE</div>
+                <div class="client-text" style="font-weight: 700; color: #334155;">
+                  <div><span style="color: #94a3b8;">Associated Case Number:</span> ${inv.caseId}</div>
+                  <div><span style="color: #94a3b8;">Services Stream:</span> ${inv.serviceName}</div>
+                  <div><span style="color: #94a3b8;">Assigned Consultant:</span> Senior Tax & Financial Consultant</div>
+                  <div style="margin-top: 4px;">
+                    <span style="color: #94a3b8;">Invoice Status:</span>
+                    <span style="color: #D4AF37; font-weight: 900; text-transform: uppercase; margin-left: 4px;">${inv.status}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-    clonedDoc.querySelectorAll("*").forEach((el: any) => {
-      // Check inline styles
-      colorProps.forEach((prop) => {
-        const val = el.style && el.style[prop];
-        if (val && (val.includes("oklch") || val.includes("oklab") || val.includes("lch") || val.includes("lab"))) {
-          el.style[prop] = toRgb(val);
-        }
-      });
+            <!-- 3. Service Line Items Table -->
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th style="width: 5%;">#</th>
+                  <th style="width: 38%;">Service Item Details</th>
+                  <th style="width: 7%;" class="text-center">Qty</th>
+                  <th style="width: 10%;" class="text-right">Rate</th>
+                  <th style="width: 10%;" class="text-right">Taxable Val</th>
+                  <th style="width: 8%;" class="text-right">CGST %</th>
+                  <th style="width: 8%;" class="text-right">SGST %</th>
+                  <th style="width: 8%;" class="text-right">IGST %</th>
+                  <th style="width: 10%;" class="text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${inv.items && inv.items.length > 0 ? inv.items.map((item, idx) => {
+                  const hasIgst = (item.igst || 0) > 0;
+                  const itemQty = item.quantity || 1;
+                  const itemRate = item.rate || 0;
+                  const itemTaxable = item.taxableValue !== undefined ? item.taxableValue : (itemQty * itemRate);
+                  const itemCgst = item.cgst || 0;
+                  const itemSgst = item.sgst || 0;
+                  const itemIgst = item.igst || 0;
+                  const itemTotal = item.total !== undefined ? item.total : (itemTaxable + itemCgst + itemSgst + itemIgst);
 
-      if (el.style) {
-        if (el.style.boxShadow && (el.style.boxShadow.includes("oklch") || el.style.boxShadow.includes("oklab"))) {
-          el.style.boxShadow = sanitizeComplex(el.style.boxShadow);
-        }
-        if (el.style.textShadow && (el.style.textShadow.includes("oklch") || el.style.textShadow.includes("oklab"))) {
-          el.style.textShadow = sanitizeComplex(el.style.textShadow);
-        }
-      }
+                  return `
+                    <tr>
+                      <td class="font-bold">${idx + 1}</td>
+                      <td>
+                        <div class="font-bold" style="color: #1e293b;">${item.serviceName || "Service Item"}</div>
+                        ${item.description ? `<div style="font-size: 8.5px; color: #94a3b8; margin-top: 2px;">${item.description}</div>` : ""}
+                      </td>
+                      <td class="text-center font-bold">${itemQty}</td>
+                      <td class="text-right">₹${itemRate.toLocaleString("en-IN")}</td>
+                      <td class="text-right font-bold">₹${itemTaxable.toLocaleString("en-IN")}</td>
+                      <td class="text-right">
+                        ${!hasIgst && (item.gstRate || 0) > 0 ? `${(item.gstRate || 0) / 2}%` : "-"}
+                        ${!hasIgst && itemCgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemCgst.toLocaleString("en-IN")}</div>` : ""}
+                      </td>
+                      <td class="text-right">
+                        ${!hasIgst && (item.gstRate || 0) > 0 ? `${(item.gstRate || 0) / 2}%` : "-"}
+                        ${!hasIgst && itemSgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemSgst.toLocaleString("en-IN")}</div>` : ""}
+                      </td>
+                      <td class="text-right">
+                        ${hasIgst && (item.gstRate || 0) > 0 ? `${item.gstRate}%` : "-"}
+                        ${hasIgst && itemIgst > 0 ? `<div style="font-size: 7.5px; color: #94a3b8;">₹${itemIgst.toLocaleString("en-IN")}</div>` : ""}
+                      </td>
+                      <td class="text-right font-black" style="color: #1e293b;">₹${itemTotal.toLocaleString("en-IN")}</td>
+                    </tr>
+                  `;
+                }).join("") : `
+                  <tr>
+                    <td colspan="9" style="text-align: center; color: #94a3b8; font-style: italic; padding: 16px;">
+                      No service line items recorded for this invoice.
+                    </td>
+                  </tr>
+                `}
 
-      // Check computed styles as fallback
-      try {
-        const computed = window.getComputedStyle(el);
-        colorProps.forEach((prop) => {
-          const cVal = (computed as any)[prop];
-          if (cVal && (cVal.includes("oklch") || cVal.includes("oklab") || cVal.includes("lch") || cVal.includes("lab"))) {
-            el.style[prop] = toRgb(cVal);
-          }
-        });
-        if (computed.boxShadow && (computed.boxShadow.includes("oklch") || computed.boxShadow.includes("oklab"))) {
-          el.style.boxShadow = sanitizeComplex(computed.boxShadow);
-        }
-      } catch (_) {}
-    });
+                <!-- Calculations Breakdown Rows -->
+                <tr style="background: #f8fafc;">
+                  <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Gross Total Base Billed:</td>
+                  <td colspan="2" class="text-right font-black" style="color: #1e293b; font-size: 10.5px;">₹${(inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
+                </tr>
+
+                ${(inv.discountAmount || 0) > 0 ? `
+                  <tr>
+                    <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #e11d48;">Discount Reduction:</td>
+                    <td colspan="2" class="text-right font-black" style="color: #e11d48; font-size: 10.5px;">- ₹${(inv.discountAmount || 0).toLocaleString("en-IN")}</td>
+                  </tr>
+                ` : ""}
+
+                <tr style="background: #f8fafc;">
+                  <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Total Taxable Value (Net):</td>
+                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 10.5px;">₹${(inv.taxableAmount ?? inv.subTotal ?? 0).toLocaleString("en-IN")}</td>
+                </tr>
+
+                ${(inv.cgstAmount || 0) > 0 ? `
+                  <tr>
+                    <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Central Tax (CGST):</td>
+                    <td colspan="2" class="text-right font-bold" style="color: #334155;">₹${(inv.cgstAmount || 0).toLocaleString("en-IN")}</td>
+                  </tr>
+                ` : ""}
+
+                ${(inv.sgstAmount || 0) > 0 ? `
+                  <tr>
+                    <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">State Tax (SGST):</td>
+                    <td colspan="2" class="text-right font-bold" style="color: #334155;">₹${(inv.sgstAmount || 0).toLocaleString("en-IN")}</td>
+                  </tr>
+                ` : ""}
+
+                ${(inv.igstAmount || 0) > 0 ? `
+                  <tr>
+                    <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #64748b;">Integrated Tax (IGST):</td>
+                    <td colspan="2" class="text-right font-bold" style="color: #334155;">₹${(inv.igstAmount || 0).toLocaleString("en-IN")}</td>
+                  </tr>
+                ` : ""}
+
+                ${(inv.roundOff || 0) !== 0 ? `
+                  <tr>
+                    <td colspan="7" class="text-right font-bold" style="text-transform: uppercase; color: #94a3b8;">Rounding Adjustments:</td>
+                    <td colspan="2" class="text-right" style="color: #64748b;">₹${(inv.roundOff || 0).toFixed(2)}</td>
+                  </tr>
+                ` : ""}
+
+                <tr style="background: #eff6ff;">
+                  <td colspan="7" class="text-right font-black" style="text-transform: uppercase; color: #0D2C6C; font-size: 11px; padding: 10px 8px;">Grand Outstanding Total:</td>
+                  <td colspan="2" class="text-right font-black" style="color: #0D2C6C; font-size: 11px; padding: 10px 8px;">₹${(inv.grandTotal ?? 0).toLocaleString("en-IN")}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 4. Amount in Words -->
+            <div class="words-box">
+              <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;">Total Amount in Words</div>
+              <div style="color: #1e293b;">${inv.amountInWords || numberToWords(inv.grandTotal ?? 0)}</div>
+            </div>
+
+            <!-- 5. Payment Receipts Allocation Log (if present) -->
+            ${inv.payments && inv.payments.length > 0 ? `
+              <div style="margin-bottom: 16px; font-size: 9.5px;">
+                <div style="font-size: 7.5px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Payment Receipts Allocation Log</div>
+                ${inv.payments.map((p: any) => `
+                  <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 6px 10px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: #166534;">
+                    <div><strong>Receipt #${p.id}</strong> • logged via [${p.mode}] on ${p.date} ${p.transactionRef ? `<span style="font-family: monospace; font-size: 8px;">Ref: ${p.transactionRef}</span>` : ""}</div>
+                    <strong style="font-size: 10.5px;">₹${p.amount.toLocaleString("en-IN")}</strong>
+                  </div>
+                `).join("")}
+              </div>
+            ` : ""}
+
+            <!-- 6. Footer Grid (Bank Details, QR Code, Signature) -->
+            <div class="footer-grid avoid-break">
+              <div class="bank-col">
+                <div class="section-tag">OFFICIAL PRACTICE BANK DETAILS</div>
+                <div class="bank-card">
+                  <div>Bank Name: <span style="color: #1e293b;">AU SMALL FINANCE BANK</span></div>
+                  <div>Beneficiary: <span style="color: #1e293b;">JAIN AGARWAL & CO</span></div>
+                  <div>Account No: <span style="color: #1e293b; font-family: monospace;">2121245232324709</span></div>
+                  <div>IFSC Code: <span style="color: #1e293b; font-family: monospace;">AUBL0002452</span></div>
+                  <div>Branch Name: <span style="color: #1e293b;">Kharghar Mumbai</span></div>
+                  <div>UPI ID: <span style="color: #1e293b; font-family: monospace;">8828147889@okbizaxis</span></div>
+                </div>
+              </div>
+
+              <div class="qr-col">
+                <div class="section-tag" style="color: #0D2C6C;">SCAN TO PAY (GPAY/UPI)</div>
+                <div class="qr-card">
+                  ${paymentQrHtml || `<div style="width: 80px; height: 80px; background: #f8fafc; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #94a3b8;">UPI QR</div>`}
+                  <div style="font-size: 7.5px; color: #64748b; font-weight: bold; margin-top: 3px;">8828147889@okbizaxis</div>
+                </div>
+              </div>
+
+              <div class="sign-col">
+                <div class="seal-badge">🛡️ Digitally Verified & Authenticated</div>
+                <div style="margin-top: 4px; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+                  ${sealQrHtml ? `<div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px; margin-bottom: 6px;">${sealQrHtml}</div>` : ""}
+                  <div style="font-size: 6.5px; color: #94a3b8; font-family: monospace; margin-bottom: 8px;">SEAL: ${sealHash}</div>
+                  <div class="sign-line"></div>
+                  <div style="font-size: 9px; font-weight: 900; color: #0D2C6C; text-transform: uppercase;">Jain Agarwal & Co.</div>
+                  <div style="font-size: 7.5px; color: #94a3b8; font-weight: bold;">Authorized Signatory Stamp</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 7. Terms & Conditions -->
+            <div class="terms-box avoid-break">
+              <strong style="color: #64748b; display: block; margin-bottom: 2px;">Terms & Conditions / Declarations:</strong>
+              <div>1. Payment due within agreed terms. Delayed payments are subject to 18% p.a. interest as per practice standards.</div>
+              <div>2. All disputes are subject to the exclusive jurisdiction of Thane Courts, Maharashtra.</div>
+              <div style="font-weight: bold; color: #64748b; margin-top: 2px;">This is a computer-generated, digitally authenticated document and does not require physical signatures.</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
   };
 
-  // Download Invoice as PDF with safe color sanitization (oklch -> rgb) and high-res vector rendering
+  // Download Invoice as PDF using dedicated clean HTML/CSS renderer (zero Tailwind/oklch dependency)
   const handleDownloadPDF = async () => {
-    const printContent = document.getElementById("printable_invoice_canvas");
-    if (!printContent || !viewInvoice) return;
+    if (!viewInvoice) return;
     setIsDownloading(true);
 
+    let iframe: HTMLIFrameElement | null = null;
     try {
+      const matchedClient = clients.find(c => c.id === viewInvoice.clientId || c.name === viewInvoice.clientName) || getClients().find(c => c.id === viewInvoice.clientId || c.name === viewInvoice.clientName);
+
       // 1. Sanitize filename: e.g. JNA-2026-27-000006-Akshay-Shyam-Sharma.pdf
       const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
       const cleanNum = sanitize(viewInvoice.id);
       const cleanClient = sanitize(viewInvoice.clientName || "Client");
       const filename = `${cleanNum}-${cleanClient}.pdf`;
 
-      // 2. Render visible canvas into high-res canvas (2x scale for sharp text) with onclone color sanitization
-      const canvas = await html2canvas(printContent, {
+      // 2. Create isolated offscreen iframe with pure CSS (no Tailwind oklch)
+      iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "0";
+      iframe.style.width = "794px";
+      iframe.style.height = "1123px";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) throw new Error("Could not access iframe rendering context.");
+
+      doc.open();
+      doc.write(generateCleanInvoiceHTML(viewInvoice, matchedClient, { title: filename }));
+      doc.close();
+
+      // Allow iframe DOM layout and images to render
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      const captureEl = doc.getElementById("invoice-capture-box") || doc.body;
+
+      // 3. Render high-res canvas via html2canvas (isolated document has 0 oklch!)
+      const canvas = await html2canvas(captureEl, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
-        onclone: (clonedDoc) => {
-          sanitizeClonedDocForPDF(clonedDoc);
-        }
+        windowWidth: 794
       });
 
-      // 3. Convert to PDF using jsPDF (A4 standard portrait)
+      // 4. Convert to PDF using jsPDF (A4 standard portrait)
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -684,20 +935,23 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
         heightLeft -= pageHeight;
       }
 
-      // 4. Trigger download
+      // 5. Trigger download
       pdf.save(filename);
     } catch (err: any) {
       console.error("[FinancialEngine] PDF generation error:", err);
       alert(`PDF generation failed: ${err.message || err.toString()}`);
     } finally {
+      if (iframe && document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
       setIsDownloading(false);
     }
   };
 
-  // Print Invoice using dedicated isolated print iframe
+  // Print Invoice using dedicated isolated print iframe (zero Tailwind/oklch/CDN dependency)
   const handlePrintInvoice = () => {
-    const printContent = document.getElementById("printable_invoice_canvas");
-    if (!printContent || !viewInvoice) return;
+    if (!viewInvoice) return;
+    const matchedClient = clients.find(c => c.id === viewInvoice.clientId || c.name === viewInvoice.clientName) || getClients().find(c => c.id === viewInvoice.clientId || c.name === viewInvoice.clientName);
 
     const sanitize = (s: string) => s.replace(/[/\\?%*:|"<> ]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
     const cleanNum = sanitize(viewInvoice.id);
@@ -711,51 +965,39 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     iframe.style.width = "0";
     iframe.style.height = "0";
     iframe.style.border = "none";
-    iframe.style.visibility = "hidden";
     document.body.appendChild(iframe);
 
     const doc = iframe.contentWindow?.document;
     if (!doc) return;
 
     doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${printTitle}</title>
-          <link rel="preconnect" href="https://fonts.googleapis.com">
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style>
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { font-family: 'Inter', sans-serif; background: #fff; color: #1e293b; margin: 0; padding: 24px; font-size: 11px; }
-            table { width: 100%; border-collapse: collapse; }
-            @page { size: A4; margin: 12mm; }
-          </style>
-        </head>
-        <body class="bg-white p-4 font-sans text-xs text-slate-800">
-          <div class="max-w-4xl mx-auto">
-            ${printContent.innerHTML}
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 400);
-            };
-          </script>
-        </body>
-      </html>
-    `);
+    doc.write(generateCleanInvoiceHTML(viewInvoice, matchedClient, { forPrint: true, title: printTitle }));
     doc.close();
 
-    // Clean up iframe after printing
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
+    const triggerPrint = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (err) {
+        console.error("Print error:", err);
       }
-    }, 15000);
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 30000);
+    };
+
+    // Wait for images to load before calling window.print()
+    if (iframe.contentWindow) {
+      const img = doc.querySelector("img");
+      if (img && !img.complete) {
+        img.onload = () => setTimeout(triggerPrint, 250);
+        img.onerror = () => setTimeout(triggerPrint, 250);
+      } else {
+        setTimeout(triggerPrint, 350);
+      }
+    }
   };
 
   // Print Ledger Statement using isolated Iframe
