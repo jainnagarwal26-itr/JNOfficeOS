@@ -704,66 +704,6 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
     );
   };
 
-  // Google Sheets Push Synchronizer (identical logic to User Management but structured for ClientCRM spreadsheet mapping)
-  const handleSyncToSheets = async () => {
-    if (!firmSettings.isGoogleSheetsConnected) {
-      alert("Connection Blocked: Please enable Google Sheets connectivity inside Practice Settings first.");
-      return;
-    }
-
-    setIsSyncing(true);
-    setSyncMessage("Mapping database schema fields and syncing active records...");
-
-    try {
-      if (firmSettings.connectedSpreadsheetUrl) {
-        const payload = {
-          action: "syncClients",
-          spreadsheetId: firmSettings.connectedSpreadsheetId,
-          clients: clients.map(c => ({
-            "Client ID": c.id,
-            "Category": c.category,
-            "Client Name": c.name,
-            "Trade Name": c.tradeName,
-            "PAN": c.pan,
-            "Aadhaar": c.aadhaar,
-            "GSTIN": c.gstin,
-            "Email": c.email,
-            "Mobile": c.mobile,
-            "State": c.state,
-            "Status": c.status,
-            "Tags": c.tags.join(", "),
-            "Assigned Staff IDs": c.assignedStaff.join(", "),
-            "Last Updated": c.updatedAt
-          }))
-        };
-
-        await fetch(firmSettings.connectedSpreadsheetUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      localStorage.setItem("jn_officeos_clients_last_sync", new Date().toISOString());
-      setSyncMessage("Synchronized successfully! Core ledger mirror established on GSheets.");
-      
-      onAddAuditLog(
-        "DATABASE_SYNCED",
-        "DATABASE",
-        `Synchronized ${clients.length} corporate CRM profiles to the 'Clients' Google Sheet.`
-      );
-      
-      setTimeout(() => setSyncMessage(null), 4000);
-    } catch (err) {
-      console.error(err);
-      setSyncMessage("Sheets sync finalized with master local cache.");
-      setTimeout(() => setSyncMessage(null), 4000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const canView = isOwner || hasPermission(currentUser, "clientCrmView");
 
   if (!canView) {
@@ -857,36 +797,22 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
                   Client Master Database
                 </h2>
                 <p className="text-xs text-slate-400 font-sans mt-0.5">
-                  Universal database directory mapped to Google Sheets compliance modules.
+                  Enterprise client directory connected to Supabase PostgreSQL.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={async () => {
-                    setIsSyncing(true);
-                    setSyncMessage("Pulling fresh client directory from Google Sheets backend...");
-                    try {
-                      const { googleSheetsService } = await import("../lib/googleSheetsService");
-                      const res = await googleSheetsService.pullAllFromSheets();
-                      loadLatestClients();
-                      if (res.success) {
-                        setSyncMessage("Synchronized successfully! Core ledger mirror established on GSheets.");
-                      } else {
-                        setSyncMessage(res.message);
-                      }
-                    } catch (err: any) {
-                      setSyncMessage(err.message || "Failed to pull clients.");
-                    } finally {
-                      setIsSyncing(false);
-                      setTimeout(() => setSyncMessage(null), 4000);
-                    }
+                  onClick={() => {
+                    loadLatestClients();
+                    setSyncMessage("Client database reloaded from Supabase.");
+                    setTimeout(() => setSyncMessage(null), 3000);
                   }}
-                  className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Sync Sheets
+                  <RefreshCw className="w-4 h-4 text-[#0D2C6C]" />
+                  Refresh
                 </button>
 
                 {canEdit && (

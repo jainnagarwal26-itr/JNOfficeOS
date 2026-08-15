@@ -62,14 +62,10 @@ const DEFAULT_SETTINGS: FirmSettings = {
     "Payment due within agreed terms.",
     "Interest may apply on delayed payments where applicable.",
     "Service once delivered is non-refundable unless otherwise agreed in writing.",
-    "Cheques are subject to realization.",
-    "This is a computer-generated invoice and does not require a physical signature if digitally authenticated."
+    "Cheques are subject to realization."
   ],
   declaration: "We declare that this invoice reflects the actual services rendered. Errors and omissions excepted. Subject to the jurisdiction of Thane, Maharashtra.",
   signatureImage: null,
-  isGoogleSheetsConnected: true,
-  connectedSpreadsheetId: "17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ",
-  connectedSpreadsheetUrl: "https://docs.google.com/spreadsheets/d/17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ/edit",
   sessionTimeoutMinutes: 15
 };
 
@@ -216,11 +212,11 @@ export async function initializeDatabase(): Promise<void> {
   const defaultDepartments: Department[] = [
     { Department_ID: "DEP01", Department_Name: "Taxation", Status: "Active", Last_Modified: new Date().toISOString() },
     { Department_ID: "DEP02", Department_Name: "Audit & Assurance", Status: "Active", Last_Modified: new Date().toISOString() },
-    { Department_ID: "DEP03", Department_Name: "", Status: "Active", Last_Modified: new Date().toISOString() }
+    { Department_ID: "DEP03", Department_Name: "Corporate Advisory", Status: "Active", Last_Modified: new Date().toISOString() }
   ];
 
   const defaultDesignations: Designation[] = [
-    { Designation_ID: "DES01", Designation_Name: "", Department_ID: "", Status: "Active", Last_Modified: new Date().toISOString() },
+    { Designation_ID: "DES01", Designation_Name: "Managing CA & Owner", Department_ID: "DEP01", Status: "Active", Last_Modified: new Date().toISOString() },
     { Designation_ID: "DES02", Designation_Name: "Senior Consultant", Department_ID: "DEP01", Status: "Active", Last_Modified: new Date().toISOString() }
   ];
 
@@ -230,41 +226,29 @@ export async function initializeDatabase(): Promise<void> {
   localStorage.setItem(STORAGE_KEYS.INITIALIZED, "true");
 }
 
-// Services DB Actions (Supabase-backed with local UI cache)
+// Initial default services fallback
+const DEFAULT_SERVICES: Service[] = [
+  { id: "srv_gst_reg", code: "SRV00004", name: "GST Registration", category: "GST", status: "ACTIVE", description: "New GST identification number application and verification." },
+  { id: "srv_gst_ret_m", code: "SRV00001", name: "GSTR-1 Filing", category: "GST", status: "ACTIVE", description: "Monthly/Quarterly outward supply statement filing." },
+  { id: "srv_gst_ret_3b", code: "SRV00002", name: "GSTR-3B Filing", category: "GST", status: "ACTIVE", description: "Monthly self-assessed tax return and ITC reconciliation." },
+  { id: "srv_itr_sal", code: "SRV00007", name: "ITR-1 (Sahaj)", category: "DIRECT_TAX", status: "ACTIVE", description: "Salary and single house property income tax return." },
+  { id: "srv_itr_biz", code: "SRV00008", name: "ITR-3 / ITR-4", category: "DIRECT_TAX", status: "ACTIVE", description: "Business and professional presumptive income tax return." },
+  { id: "srv_tax_audit", code: "SRV00010", name: "Tax Audit (Sec 44AB)", category: "AUDIT", status: "ACTIVE", description: "Mandatory statutory tax audit for businesses exceeding threshold limits." }
+];
+
 export function getServices(): Service[] {
   const data = localStorage.getItem(STORAGE_KEYS.SERVICES);
-  if (!data) return [];
+  if (!data) return DEFAULT_SERVICES;
   try {
-    return JSON.parse(data);
+    const list: Service[] = JSON.parse(data);
+    return list.length > 0 ? list : DEFAULT_SERVICES;
   } catch (e) {
-    return [];
+    return DEFAULT_SERVICES;
   }
 }
 
 export function saveServices(services: Service[]): void {
   localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
-  // Production Sync to Google Sheets
-  import("./googleSheetsService").then(({ googleSheetsService }) => {
-    if (googleSheetsService.isActiveSyncEnabled()) {
-      const mapped = services.map(s => ({
-        "Service ID": s.id,
-        "Service_ID": s.id,
-        "Service Name": s.name,
-        "Service_Name": s.name,
-        "Category": s.category,
-        "Category_ID": s.category,
-        "Standard Fee (INR)": s.rules?.amountRequired ? 1500 : 0,
-        "Default_Fee": s.rules?.amountRequired ? 1500 : 0,
-        "HSN_SAC": "9982",
-        "GST_Rate": 0.18,
-        "Status": s.status || "ACTIVE",
-        "Description": s.description || s.code || "",
-        "Created At": s.createdAt || new Date().toISOString(),
-        "Is_Demo": false
-      }));
-      googleSheetsService.bulkSync("ServiceMaster", "Service ID", mapped);
-    }
-  });
 }
 
 export function getNextServiceId(): string {
@@ -536,80 +520,6 @@ export function saveClients(clients: Client[]): void {
       supabaseService.upsertClient(c);
     });
   });
-
-  // Production Sync to Google Sheets Fallback
-  import("./googleSheetsService").then(({ googleSheetsService }) => {
-    if (googleSheetsService.isActiveSyncEnabled()) {
-      const mapped = clients.map(c => ({
-        "Client_ID": c.id,
-        "Client_Type": c.category || "Individual",
-        "Client_Name": c.name || "",
-        "Trade_Name": c.tradeName || "",
-        "Business_Name": c.businessName || "",
-        "Client_Source": c.clientSource || "Direct",
-        "Referred_By": c.referredBy || "",
-        "PAN": c.pan || "",
-        "Aadhaar_Card_No": c.aadhaar || "",
-        "Aadhaar": c.aadhaar || "",
-        "GSTIN": c.gstin || "",
-        "TAN": c.tan || "",
-        "Udyam_Registration": c.udyamRegistration || "",
-        "FSSAI_Number": c.fssaiNumber || "",
-        "IEC_Number": c.iecNumber || "",
-        "Professional_Tax_Number": c.professionalTaxNumber || "",
-        "PF_Number": c.pfNumber || "",
-        "ESIC_Number": c.esicNumber || "",
-        "CIN": c.cin || "",
-        "DIN": c.din || "",
-        "MSME": c.msme || "None",
-        "Address": c.officeAddress || "",
-        "Office_Address": c.officeAddress || "",
-        "City": c.city || "",
-        "State": c.state || "Maharashtra",
-        "Pin_Code": c.pinCode || "",
-        "Country": c.country || "India",
-        "Bank_Name": c.bankName || "",
-        "Account_Holder": c.accountHolder || "",
-        "Account_Number": c.accountNumber || "",
-        "IFSC": c.ifsc || "",
-        "Branch": c.branch || "",
-        "UPI": c.upi || "",
-        "Business_Nature": c.businessNature || "",
-        "Business_Type": c.businessType || "Services",
-        "Constitution": c.constitution || "Individual",
-        "Date_Of_Incorporation": c.dateOfIncorporation || "",
-        "Date_Of_Registration": c.dateOfRegistration || "",
-        "Financial_Year": c.financialYear || "2026-27",
-        "Assessment_Year": c.assessmentYear || "2027-28",
-        "Email": c.email || "",
-        "Phone": c.mobile || "",
-        "Mobile": c.mobile || "",
-        "Alternate_Mobile": c.alternateMobile || "",
-        "Whatsapp": c.whatsapp || "",
-        "Website": c.website || "",
-        "Status": c.status || "Active",
-        "Tags": (c.tags || []).join(", "),
-        "Assigned_Staff_IDs": (c.assignedStaff || []).join(", "),
-        "Internal_Notes": c.internalNotes || "",
-        "Last_Updated": c.updatedAt || new Date().toISOString(),
-        "Is_Demo": false
-      }));
-      googleSheetsService.bulkSync("Clients", "Client_ID", mapped);
-
-      // Always sync Sub-Contacts to jn_client_contacts sheet
-      const mappedContacts = allContacts.map(cnt => ({
-        "Contact_ID": cnt.id,
-        "Client_ID": cnt.clientId,
-        "Contact_Name": cnt.name || "",
-        "Role": cnt.role || "Contact Person",
-        "Email": cnt.email || "",
-        "Phone": cnt.phone || "",
-        "Is_Primary": cnt.isPrimary ? "TRUE" : "FALSE",
-        "Is_Demo": false
-      }));
-      googleSheetsService.bulkSync("jn_client_contacts", "Contact_ID", mappedContacts);
-    }
-  });
 }
 
 export function getNextClientId(): string {
@@ -726,27 +636,6 @@ export function saveUsers(users: User[]): void {
       supabaseService.upsertUser(u);
     });
   });
-
-  // Production Sync to Google Sheets
-  import("./googleSheetsService").then(({ googleSheetsService }) => {
-    if (googleSheetsService.isActiveSyncEnabled()) {
-      const mapped = users.map(u => ({
-        "User ID": u.id,
-        "Email": u.email,
-        "Name": u.name,
-        "Username": u.username,
-        "Mobile": u.mobile,
-        "Designation": u.designation,
-        "Role": u.role === UserRole.OWNER ? "SuperAdmin" : u.role,
-        "Status": u.status,
-        "Joining Date": u.joiningDate,
-        "Password Hash": u.passwordHash,
-        "Permissions": u.permissions,
-        "Created At": u.createdAt
-      }));
-      googleSheetsService.bulkSync("Users", "User ID", mapped);
-    }
-  });
 }
 
 // Settings DB Actions
@@ -761,14 +650,6 @@ export function getSettings(): FirmSettings {
     }
   } else {
     parsed = DEFAULT_SETTINGS;
-  }
-  
-  // Enforce permanent production-grade connection details for the user
-  if (!parsed.isGoogleSheetsConnected || parsed.connectedSpreadsheetId !== "17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ") {
-    parsed.isGoogleSheetsConnected = true;
-    parsed.connectedSpreadsheetId = "17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ";
-    parsed.connectedSpreadsheetUrl = "https://docs.google.com/spreadsheets/d/17K5acN1wu6qbQxM8aEz1SUd6bmzejFTuS0flIRN5viQ/edit";
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(parsed));
   }
 
   // Force update to authentic AU SMALL FINANCE BANK details as requested by user
@@ -825,22 +706,6 @@ export function addAuditLog(
   // Enterprise Supabase RDBMS Sync
   import("./supabaseService").then(({ supabaseService }) => {
     supabaseService.logAudit(newLog);
-  });
-
-  // Production Sync to Google Sheets
-  import("./googleSheetsService").then(({ googleSheetsService }) => {
-    if (googleSheetsService.isActiveSyncEnabled()) {
-      googleSheetsService.pushRecord("AuditLogs", "Log ID", newLog.id, {
-        "Log ID": newLog.id,
-        "Timestamp": newLog.timestamp,
-        "User Email": newLog.userEmail,
-        "User Name": newLog.userName,
-        "Role": newLog.role === UserRole.OWNER ? "SuperAdmin" : newLog.role,
-        "Action": newLog.action,
-        "Category": newLog.category,
-        "Details": newLog.details
-      });
-    }
   });
 
   // Dynamically forward audit actions to the Event Bus asynchronously to prevent circular dependency blocks

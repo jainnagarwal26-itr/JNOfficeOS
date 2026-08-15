@@ -753,65 +753,25 @@ export default function ServiceMaster({ currentUser, onAddAuditLog }: ServiceMas
     setServices(sorted);
   };
 
-  // Google Sheets sync matching the client CRM pattern perfectly
-  const handleSheetsSync = async () => {
+  // Reload services from authoritative database
+  const handleReloadServices = () => {
     setSyncStatus("syncing");
-    setSyncMessage("Transmitting service schemas and compliance rules to active Google Sheets database...");
+    setSyncMessage("Refreshing services directory from Supabase PostgreSQL...");
     
     try {
-      const firmSettings = getSettings();
-      if (firmSettings.isGoogleSheetsConnected && firmSettings.connectedSpreadsheetUrl) {
-        const payload = {
-          syncType: "SERVICE_MASTER",
-          timestamp: new Date().toISOString(),
-          firmName: firmSettings.firmName,
-          services: services.map(s => ({
-            "Service ID": s.id,
-            "Service Name": s.name,
-            "Category": s.category,
-            "Service Code": s.code,
-            "Description": s.description,
-            "Government Form": s.governmentForm,
-            "Department": s.department,
-            "Filing Period": s.period,
-            "Status": s.status,
-            "FY Required": s.rules.financialYearRequired ? "YES" : "NO",
-            "AY Required": s.rules.assessmentYearRequired ? "YES" : "NO",
-            "Month Required": s.rules.monthRequired ? "YES" : "NO",
-            "Quarter Required": s.rules.quarterRequired ? "YES" : "NO",
-            "Doc Required": s.rules.documentRequired ? "YES" : "NO",
-            "Fee Required": s.rules.amountRequired ? "YES" : "NO",
-            "Due Date Required": s.rules.dueDateRequired ? "YES" : "NO"
-          }))
-        };
-
-        await fetch(firmSettings.connectedSpreadsheetUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      const syncTime = new Date().toISOString();
-      localStorage.setItem("jn_officeos_services_last_sync", syncTime);
-      setLastSyncTime(syncTime);
+      const refreshed = getServices();
+      setServices(refreshed);
       setSyncStatus("success");
-      setSyncMessage("Service Master synchronizer completed successfully. Mirror established on GSheets.");
-      onAddAuditLog("SERVICES_SYNCED", "DATABASE", `Synchronized ${services.length} active Master Services and Rule mappings to Google Sheet.`);
+      setSyncMessage("Service master successfully refreshed from database.");
       
       setTimeout(() => {
         setSyncStatus("idle");
         setSyncMessage(null);
-      }, 4000);
+      }, 3000);
     } catch (e) {
       console.error(e);
-      setSyncStatus("success");
-      setSyncMessage("Service parameters verified and synchronized with local backup registry.");
-      setTimeout(() => {
-        setSyncStatus("idle");
-        setSyncMessage(null);
-      }, 4000);
+      setSyncStatus("idle");
+      setSyncMessage(null);
     }
   };
 
@@ -973,20 +933,20 @@ export default function ServiceMaster({ currentUser, onAddAuditLog }: ServiceMas
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
               </div>
               <div className="text-left">
-                <p className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Google Sheet Sync</p>
+                <p className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Cloud Database</p>
                 <p className="text-xs font-semibold text-emerald-300">
-                  {lastSyncTime ? `Synced: ${new Date(lastSyncTime).toLocaleTimeString()}` : "Database Bound"}
+                  Supabase RDBMS
                 </p>
               </div>
             </div>
 
             <button
-              onClick={handleSheetsSync}
+              onClick={handleReloadServices}
               disabled={syncStatus === "syncing"}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold text-xs flex items-center gap-2 shadow-lg hover:shadow-emerald-900/30 cursor-pointer transition-all disabled:opacity-50"
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-semibold text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-all disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
-              Sync GSheets
+              Refresh
             </button>
           </div>
         </div>

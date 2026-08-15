@@ -31,6 +31,8 @@ export interface PrivateChatMessage {
   senderName?: string;
   messageText: string;
   createdAt: string;
+  isRead?: boolean;
+  readAt?: string | null;
   deletedAt?: string | null;
   deletedBy?: string | null;
   deletedReason?: string | null;
@@ -276,6 +278,8 @@ export class PrivateChatRepository {
         senderName: nameMap.get(m.sender_id) || "Staff",
         messageText: m.message_text,
         createdAt: m.created_at,
+        isRead: m.is_read || false,
+        readAt: m.read_at || null,
         deletedAt: m.deleted_at,
         deletedBy: m.deleted_by,
         deletedReason: m.deleted_reason
@@ -446,6 +450,88 @@ export class PrivateChatRepository {
   }
 
   /**
+   * Mark all unread messages in a conversation as read by the recipient
+   */
+  public static async markConversationAsRead(chatId: string, currentUserId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !chatId || !currentUserId) return;
+
+    try {
+      const now = new Date().toISOString();
+      await supabase
+        .from("jn_private_chat_messages")
+        .update({
+          is_read: true,
+          read_at: now
+        })
+        .eq("chat_id", chatId)
+        .neq("sender_id", currentUserId)
+        .eq("is_read", false);
+    } catch (e) {
+      console.error("[PrivateChatRepository] Error marking conversation as read:", e);
+    }
+  }
+
+  /**
+   * Get total unread private messages for the current user
+   */
+  public static async getUnreadMessageCount(currentUserId: string): Promise<number> {
+    if (!isSupabaseConfigured() || !currentUserId) return 0;
+
+    try {
+      // 1. Get all active chat IDs where current user is a participant
+      const { data: myChats, error: chatsErr } = await supabase
+        .from("jn_private_chats")
+        .select("id")
+        .eq("is_active", true)
+        .or(`participant_one_id.eq.${currentUserId},participant_two_id.eq.${currentUserId}`);
+
+      if (chatsErr || !myChats || myChats.length === 0) return 0;
+
+      const chatIds = myChats.map(c => c.id);
+
+      // 2. Count unread messages not sent by current user
+      const { count, error: countErr } = await supabase
+        .from("jn_private_chat_messages")
+        .select("*", { count: "exact", head: true })
+        .in("chat_id", chatIds)
+        .neq("sender_id", currentUserId)
+        .eq("is_read", false)
+        .is("deleted_at", null);
+
+      if (countErr) return 0;
+      return count || 0;
+    } catch (e) {
+      console.error("[PrivateChatRepository] Error getting unread count:", e);
+      return 0;
+    }
+  }
+
+  /**
+   * Get participant IDs for a chat
+   */
+  public static async getChatParticipants(chatId: string): Promise<{ participantOneId: string; participantTwoId: string } | null> {
+    if (!isSupabaseConfigured() || !chatId) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from("jn_private_chats")
+        .select("participant_one_id, participant_two_id")
+        .eq("id", chatId)
+        .limit(1)
+        .single();
+
+      if (error || !data) return null;
+      return {
+        participantOneId: data.participant_one_id,
+        participantTwoId: data.participant_two_id
+      };
+    } catch (e) {
+      console.error("[PrivateChatRepository] Error getting chat participants:", e);
+      return null;
+    }
+  }
+
+  /**
    * Subscribe to live Realtime updates on private chat messages
    */
   public static subscribeToChat(
@@ -473,6 +559,8 @@ export class PrivateChatRepository {
               senderId: payload.new.sender_id,
               messageText: payload.new.message_text,
               createdAt: payload.new.created_at,
+              isRead: payload.new.is_read || false,
+              readAt: payload.new.read_at || null,
               deletedAt: payload.new.deleted_at,
               deletedBy: payload.new.deleted_by,
               deletedReason: payload.new.deleted_reason

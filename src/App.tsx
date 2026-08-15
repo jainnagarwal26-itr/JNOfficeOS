@@ -40,8 +40,10 @@ import ComplianceRegisterView from "./components/ComplianceRegisterView";
 import PartnerComplianceCommandCenter from "./components/PartnerComplianceCommandCenter";
 import { StaffDailyWorkReporting } from "./components/StaffDailyWorkReporting";
 import { PrivateStaffChat } from "./components/PrivateStaffChat";
+import { PrivateChatToast } from "./components/PrivateChatToast";
 import { EnterpriseConfigurationStudio } from "./components/EnterpriseConfigurationStudio";
 import { ModalProvider } from "./components/ModalFramework";
+import { privateChatNotificationService } from "./lib/privateChatNotificationService";
 
 export default function App() {
   const [dbInitialized, setDbInitialized] = useState(false);
@@ -51,11 +53,36 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [sessionCountdown, setSessionCountdown] = useState<number>(0);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [privateChatUnread, setPrivateChatUnread] = useState<number>(0);
+  const [selectedChatTarget, setSelectedChatTarget] = useState<{ chatId?: string; userId?: string } | null>(null);
 
   const handleShowToast = (message: string, type: "success" | "error") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // Setup central Realtime private chat notifications on user login
+  useEffect(() => {
+    if (!currentUser) {
+      privateChatNotificationService.destroy();
+      setPrivateChatUnread(0);
+      return;
+    }
+
+    privateChatNotificationService.initialize(currentUser, (chatId, senderId) => {
+      setActiveView("private_chat");
+      setSelectedChatTarget({ chatId, userId: senderId });
+    });
+
+    const unsubUnread = privateChatNotificationService.subscribeToUnreadCount((count) => {
+      setPrivateChatUnread(count);
+    });
+
+    return () => {
+      unsubUnread();
+      privateChatNotificationService.destroy();
+    };
+  }, [currentUser]);
 
   // Initialize DB and settings on load
   useEffect(() => {
@@ -169,32 +196,8 @@ export default function App() {
       }
 
       setDbInitialized(true);
-
-      // Startup sync trigger: if Google Sheets is configured, load fresh production data first
-      setTimeout(() => {
-        import("./lib/googleSheetsService").then(async ({ googleSheetsService }) => {
-          if (googleSheetsService.isActiveSyncEnabled()) {
-            console.log("[App] Startup: Google Sheets is configured. Triggering fresh database pull...");
-            const res = await googleSheetsService.pullAllFromSheets();
-            if (res.success) {
-              console.log("[App] Startup database pull completed successfully.");
-              if (sessionEmail) {
-                import("./lib/db").then(({ getUsers }) => {
-                  const matchingUser = getUsers().find(
-                    (u) => (u.email || "").toLowerCase() === sessionEmail!.toLowerCase() && u.status === "ACTIVE"
-                  );
-                  if (matchingUser) {
-                    setCurrentUser(matchingUser);
-                  }
-                });
-              }
-            } else {
-              console.warn("[App] Startup database pull failed (likely offline/unreachable):", res.message);
-            }
-          }
-        });
-      }, 1000);
     };
+
     const handleOnline = () => {
       console.log("[App] Internet connection restored. Attempting queue sync...");
       import("./lib/offlineSyncManager").then(({ OfflineSyncManager }) => {
@@ -436,6 +439,8 @@ export default function App() {
         return (
           <PrivateStaffChat
             currentUser={currentUser}
+            targetChatId={selectedChatTarget?.chatId}
+            targetUserId={selectedChatTarget?.userId}
             onAddAuditLog={handleAddAuditLog}
           />
         );
@@ -559,7 +564,7 @@ export default function App() {
           {/* Sync badge status indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-100 font-semibold text-[10px] tracking-wide uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            {settings.isGoogleSheetsConnected ? "Sheets Synced" : "Sandbox active"}
+            Cloud Synced
           </div>
 
           {/* Profile Name Block */}
@@ -679,12 +684,19 @@ export default function App() {
                 <ChevronRight className={`w-3.5 h-3.5 ${activeView === "daily_reports" ? "text-[#0D2C6C]" : "text-white/30"}`} />
               </button>
 
-              <button onClick={() => setActiveView("private_chat")} className={getSidebarItemClass("private_chat")}>
+              <button onClick={() => { setActiveView("private_chat"); setSelectedChatTarget(null); }} className={getSidebarItemClass("private_chat")}>
                 <span className="flex items-center gap-2.5">
                   <MessageSquare className="w-4 h-4 text-[#D4AF37]" />
-                  {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}
+                  <span>{currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}</span>
                 </span>
-                <ChevronRight className={`w-3.5 h-3.5 ${activeView === "private_chat" ? "text-[#0D2C6C]" : "text-white/30"}`} />
+                <div className="flex items-center gap-1.5">
+                  {privateChatUnread > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse">
+                      {privateChatUnread}
+                    </span>
+                  )}
+                  <ChevronRight className={`w-3.5 h-3.5 ${activeView === "private_chat" ? "text-[#0D2C6C]" : "text-white/30"}`} />
+                </div>
               </button>
 
               <button onClick={() => setActiveView("invoices")} className={getSidebarItemClass("invoices")}>
@@ -852,6 +864,31 @@ export default function App() {
                     <div className="space-y-1">
                       <span className="block text-[8px] font-bold text-white/55 uppercase tracking-widest pl-4 mb-2">Core Operations</span>
                       
+                      <button
+                        onClick={() => { setActiveView("daily_reports"); setIsMobileSidebarOpen(false); }}
+                        className={getSidebarItemClass("daily_reports")}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          {currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Staff Daily Reports" : "My Daily Work"}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => { setActiveView("private_chat"); setSelectedChatTarget(null); setIsMobileSidebarOpen(false); }}
+                        className={getSidebarItemClass("private_chat")}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          <span>{currentUser.role === "OWNER" || currentUser.role === "SUPERADMIN" ? "Private Staff Chat" : "Private Chat"}</span>
+                        </span>
+                        {privateChatUnread > 0 && (
+                          <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                            {privateChatUnread}
+                          </span>
+                        )}
+                      </button>
+
                       {["cases", "clients", "services", "workflows", "automation", "invoices", "expenses", "reports", "dms"].map((v) => {
                         let label = v.charAt(0).toUpperCase() + v.slice(1) + " Module";
                         if (v === "cases") label = "Enterprise Case Directory";
@@ -941,6 +978,9 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* Private Staff Chat In-App Floating Toast Banner */}
+      <PrivateChatToast />
 
       {/* Elegant Toast Alert Notification */}
       <AnimatePresence>
@@ -1032,16 +1072,16 @@ function ModuleSkeletonPlaceholder({ title, icon, desc }: SkeletonProps) {
           
           <div className="space-y-3 text-xs">
             <p className="text-slate-500 leading-relaxed">
-              This module is planned as a client-side layout proxy connected directly via HTTPS to your background Google Sheets database. 
+              This module connects directly to your enterprise Supabase PostgreSQL cloud database. 
             </p>
             
             <div className="space-y-2 border-t border-slate-50 pt-3">
-              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Key Functions to Implement:</span>
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Key Functions Implemented:</span>
               <ul className="space-y-1.5 list-disc pl-4 text-slate-600">
-                <li>Automated spreadsheet row insertion on form submissions</li>
-                <li>Lazy rendering data tables with full client-side search</li>
+                <li>Automated PostgreSQL transactional row insertion</li>
+                <li>Fast indexed querying with full client-side search</li>
                 <li>Dynamic data transformations to custom JSON</li>
-                <li>OAuth credentialed record deletions</li>
+                <li>Role-based RLS authorization and access control</li>
               </ul>
             </div>
           </div>

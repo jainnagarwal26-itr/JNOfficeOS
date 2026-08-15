@@ -4,7 +4,6 @@
  */
 
 import { Case, CaseStatus, CasePriority, CaseChecklistItem, CaseAttachment, CaseTimelineEvent, CaseNote, CaseInvoice, CasePayment, User, UserRole } from "../types";
-import { googleSheetsService } from "./googleSheetsService";
 import { addAuditLog } from "./db";
 
 const REPO_STORAGE_KEYS = {
@@ -173,37 +172,6 @@ export class CaseRepository {
         supabaseService.upsertCase(c);
       });
     });
-    // Production Sync to Google Sheets
-    import("./googleSheetsService").then(({ googleSheetsService }) => {
-      if (googleSheetsService.isActiveSyncEnabled()) {
-        const mapped = this.casesCache.map((c) => ({
-          "Case ID": c.id,
-          "Case_ID": c.id,
-          "Client ID": c.clientId || "",
-          "Client_ID": c.clientId || "",
-          "Client Name": c.clientName,
-          "Client_Name": c.clientName,
-          "Service ID": c.serviceId || "",
-          "Service_ID": c.serviceId || "",
-          "Service Name": c.serviceName,
-          "Service_Name": c.serviceName,
-          "Status": c.status,
-          "Priority": c.priority,
-          "Staff_ID": c.assignedStaffIds.join(", "),
-          "Assigned Staff IDs": c.assignedStaffIds.join(", "),
-          "Progress": c.checklist.length > 0 ? Math.round((c.checklist.filter(item => item.isCompleted).length / c.checklist.length) * 100) : 0,
-          "Progress_Pct": c.checklist.length > 0 ? Math.round((c.checklist.filter(item => item.isCompleted).length / c.checklist.length) * 100) : 0,
-          "Start Date": c.createdAt,
-          "Start_Date": c.createdAt,
-          "Target Date": c.expectedCompletionDate,
-          "Target_Date": c.expectedCompletionDate,
-          "Updated At": c.updatedAt,
-          "Updated_At": c.updatedAt,
-          "Is_Demo": false
-        }));
-        googleSheetsService.bulkSync("Cases", "Case ID", mapped);
-      }
-    });
   }
 
   public static getCases(currentUser: User): Case[] {
@@ -317,11 +285,6 @@ export class CaseRepository {
     this.casesCache.unshift(newCase);
     this.persist();
 
-    // Write to Google Sheets
-    googleSheetsService.syncCase(newCase);
-    newCase.timeline.forEach(evt => googleSheetsService.syncTimeline(newCase.id, evt));
-    newCase.checklist.forEach(item => googleSheetsService.syncChecklistItem(newCase.id, item));
-
     // Audit Log
     addAuditLog(
       currentUser.email,
@@ -425,14 +388,10 @@ export class CaseRepository {
 
     if (events.length > 0) {
       updatedCase.timeline = [...events, ...updatedCase.timeline];
-      events.forEach(evt => googleSheetsService.syncTimeline(updatedCase.id, evt));
     }
 
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
-
-    // Sheets Sync Case
-    googleSheetsService.syncCase(updatedCase);
 
     // Audit Log
     addAuditLog(
@@ -488,8 +447,6 @@ export class CaseRepository {
 
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
-
-    googleSheetsService.syncTimeline(updatedCase.id, noteEvt);
 
     return updatedCase;
   }
@@ -551,15 +508,6 @@ export class CaseRepository {
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
 
-    googleSheetsService.syncChecklistItem(caseId, {
-      id: itemId,
-      title: checkedTitle,
-      isCompleted,
-      completedAt: isCompleted ? timestamp : undefined,
-      completedBy: isCompleted ? currentUser.name : undefined
-    });
-    googleSheetsService.syncTimeline(caseId, chkEvt);
-
     return updatedCase;
   }
 
@@ -618,9 +566,6 @@ export class CaseRepository {
 
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
-
-    googleSheetsService.syncDocument(caseId, newAttachment);
-    googleSheetsService.syncTimeline(caseId, docEvt);
 
     return updatedCase;
   }
@@ -708,8 +653,6 @@ export class CaseRepository {
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
 
-    googleSheetsService.syncTimeline(caseId, invEvt);
-
     // Audit Log
     addAuditLog(
       currentUser.email,
@@ -784,8 +727,6 @@ export class CaseRepository {
 
     this.casesCache[caseIndex] = updatedCase;
     this.persist();
-
-    googleSheetsService.syncTimeline(caseId, payEvt);
 
     // Audit Log
     addAuditLog(

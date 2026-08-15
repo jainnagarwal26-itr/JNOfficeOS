@@ -316,7 +316,7 @@ export const REPOSITORY_METADATA_REGISTRY: RepositoryCatalog[] = [
     purpose: "Handles case lifecycles, progress track indicators, checklist completions, timelines, and case links.",
     entitiesManaged: ["Case", "CaseChecklistItem", "CaseTimelineEvent", "CaseNote"],
     primaryMethods: ["getCases()", "getCaseById()", "createCase()", "updateCase()", "addCaseNote()", "toggleChecklistItem()"],
-    dependencies: ["googleSheetsService", "addAuditLog", "localStorage"],
+    dependencies: ["addAuditLog", "localStorage", "supabaseService"],
     publishedEvents: ["CASE_CREATED", "CASE_UPDATED", "CASE_COMPLETED"],
     consumedEvents: [],
     persistenceTarget: "IndexedDB / LocalStorage / Cloud Adapter Interface",
@@ -599,20 +599,20 @@ export const REPORTING_METADATA_REGISTRY: ReportingMetadata[] = [
 
 export const INTEGRATION_REGISTRY: IntegrationContract[] = [
   {
-    channel: "Google Sheets",
-    purpose: "Real-time ledger cloud data mirror",
-    authMethod: "OAuth2 Consent Flow",
-    payloadType: "JSON Structured Rows",
+    channel: "Supabase PostgreSQL",
+    purpose: "Authoritative cloud relational database and ACID transaction master",
+    authMethod: "Supabase JWT / RLS",
+    payloadType: "JSON Structured Rows / Relational Tables",
     triggerEvent: "CRUD database transitions",
-    futureAPI: "SpreadsheetApp API"
+    futureAPI: "PostgREST / Supabase Client API"
   },
   {
-    channel: "Google Drive",
+    channel: "Supabase Storage",
     purpose: "Immutable PDF backup and client attachments storage repository",
-    authMethod: "OAuth2 Workspace Scopes",
-    payloadType: "Binary Base64 streams",
+    authMethod: "Supabase Storage Policies",
+    payloadType: "Binary & Document Blobs",
     triggerEvent: "DOCUMENT_UPLOADED",
-    futureAPI: "DriveApp API"
+    futureAPI: "Supabase Storage API"
   }
 ];
 

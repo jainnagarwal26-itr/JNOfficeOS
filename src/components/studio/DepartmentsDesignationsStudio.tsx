@@ -1,12 +1,6 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect } from "react";
 import { User } from "../../types";
 import { getDepartments, saveDepartments, getDesignations, saveDesignations, Department, Designation, addAuditLog } from "../../lib/db";
-import { googleSheetsService } from "../../lib/googleSheetsService";
 import { OfflineSyncManager } from "../../lib/offlineSyncManager";
 import { Building, Award, Plus, Trash2, Edit2, AlertCircle, RefreshCw, CheckCircle, Wifi, WifiOff } from "lucide-react";
 
@@ -40,38 +34,21 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
     };
     window.addEventListener("online", handleStatus);
     window.addEventListener("offline", handleStatus);
-    
-    // Also sync state with Sheets pulls
-    const handleSyncEvent = () => {
-      setDepartments(getDepartments());
-      setDesignations(getDesignations());
-    };
-    window.addEventListener("sheets-database-synced", handleSyncEvent);
 
     return () => {
       window.removeEventListener("online", handleStatus);
       window.removeEventListener("offline", handleStatus);
-      window.removeEventListener("sheets-database-synced", handleSyncEvent);
     };
   }, []);
 
-  const handlePullLatest = async () => {
-    if (!isOnline) {
-      onShowToast("Internet connection required to modify master data.", "error");
-      return;
-    }
+  const handlePullLatest = () => {
     setIsSyncing(true);
     try {
-      const res = await googleSheetsService.pullAllFromSheets();
-      if (res.success) {
-        setDepartments(getDepartments());
-        setDesignations(getDesignations());
-        onShowToast("Master data updated from Google Sheets successfully!", "success");
-      } else {
-        onShowToast(res.message, "error");
-      }
+      setDepartments(getDepartments());
+      setDesignations(getDesignations());
+      onShowToast("Master data reloaded successfully!", "success");
     } catch (e: any) {
-      onShowToast(e.message || "Failed to pull fresh data.", "error");
+      onShowToast(e.message || "Failed to reload fresh data.", "error");
     } finally {
       setIsSyncing(false);
     }
@@ -97,77 +74,48 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
           Last_Modified: new Date().toISOString()
         };
 
-        const success = await googleSheetsService.pushRecord(
-          "jn_departments",
-          "Department_ID",
-          editingDeptId,
-          updatedDept
+        const list = departments.map((d) =>
+          d.Department_ID === editingDeptId ? { ...d, ...updatedDept } : d
         );
+        setDepartments(list);
+        saveDepartments(list);
+        setEditingDeptId(null);
+        setDeptName("");
+        setDeptStatus("Active");
+        onShowToast("Department updated successfully!", "success");
 
-        if (success) {
-          const list = departments.map((d) =>
-            d.Department_ID === editingDeptId ? { ...d, ...updatedDept } : d
-          );
-          setDepartments(list);
-          saveDepartments(list);
-          setEditingDeptId(null);
-          setDeptName("");
-          setDeptStatus("Active");
-          onShowToast("Department updated successfully!", "success");
-
-          addAuditLog(
-            currentUser.email,
-            currentUser.name,
-            currentUser.role,
-            "DEPARTMENT_EDIT",
-            "DATABASE",
-            `Department updated: "${deptName}" (ID: ${editingDeptId})`
-          );
-        } else {
-          onShowToast("Backend server rejected the update.", "error");
-        }
+        addAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "DEPARTMENT_EDIT",
+          "DATABASE",
+          `Department updated: "${deptName}" (ID: ${editingDeptId})`
+        );
       } else {
-        // Create Department - Send ONLY business fields, let server generate the ID
-        const newDeptPayload = {
+        // Create Department
+        const createdDept: Department = {
+          Department_ID: `DEP${Date.now().toString().slice(-4)}`,
           Department_Name: deptName.trim(),
           Status: deptStatus,
           Last_Modified: new Date().toISOString()
         };
 
-        // Call Google Sheets service with action: "create"
-        const res = await googleSheetsService["makePostRequest"]({
-          action: "create",
-          table: "jn_departments",
-          data: newDeptPayload
-        });
+        const list = [...departments, createdDept];
+        setDepartments(list);
+        saveDepartments(list);
+        setDeptName("");
+        setDeptStatus("Active");
+        onShowToast(`Department created successfully with ID: ${createdDept.Department_ID}!`, "success");
 
-        if (res && res.success && res.data) {
-          // Retrieve backend-generated ID
-          const createdDept: Department = {
-            Department_ID: res.data.Department_ID || res.data.Department_Id || `DEP${Date.now().toString().slice(-4)}`,
-            Department_Name: res.data.Department_Name || deptName.trim(),
-            Status: res.data.Status || deptStatus,
-            Last_Modified: res.data.Last_Modified || new Date().toISOString()
-          };
-
-          const list = [...departments, createdDept];
-          setDepartments(list);
-          saveDepartments(list);
-          setDeptName("");
-          setDeptStatus("Active");
-          onShowToast(`Department created successfully with ID: ${createdDept.Department_ID}!`, "success");
-
-          addAuditLog(
-            currentUser.email,
-            currentUser.name,
-            currentUser.role,
-            "DEPARTMENT_CREATE",
-            "DATABASE",
-            `Department registered: "${createdDept.Department_Name}" with backend generated ID: ${createdDept.Department_ID}`
-          );
-        } else {
-          onShowToast("Backend failed to generate Department ID.", "error");
-        }
+        addAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "DEPARTMENT_CREATE",
+          "DATABASE",
+          `Department registered: "${createdDept.Department_Name}" with ID: ${createdDept.Department_ID}`
+        );
       }
     } catch (err: any) {
       onShowToast(err.message || "Failed to save department.", "error");
@@ -183,35 +131,25 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
   };
 
   const handleDeleteDept = async (id: string) => {
-    if (!isOnline) {
-      onShowToast("Internet connection required to modify master data.", "error");
-      return;
-    }
-
     if (!window.confirm("Are you sure you want to delete this Department? Designations linked to this department will be orphaned.")) {
       return;
     }
 
     setIsSyncing(true);
     try {
-      const success = await googleSheetsService.deleteRecord("jn_departments", "Department_ID", id);
-      if (success) {
-        const list = departments.filter((d) => d.Department_ID !== id);
-        setDepartments(list);
-        saveDepartments(list);
-        onShowToast("Department deleted successfully!", "success");
+      const list = departments.filter((d) => d.Department_ID !== id);
+      setDepartments(list);
+      saveDepartments(list);
+      onShowToast("Department deleted successfully!", "success");
 
-        addAuditLog(
-          currentUser.email,
-          currentUser.name,
-          currentUser.role,
-          "DEPARTMENT_DELETE",
-          "DATABASE",
-          `Department deleted (ID: ${id})`
-        );
-      } else {
-        onShowToast("Failed to delete record from Google Sheets.", "error");
-      }
+      addAuditLog(
+        currentUser.email,
+        currentUser.name,
+        currentUser.role,
+        "DEPARTMENT_DELETE",
+        "DATABASE",
+        `Department deleted (ID: ${id})`
+      );
     } catch (err: any) {
       onShowToast(err.message || "Failed to delete department.", "error");
     } finally {
@@ -227,11 +165,6 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
       return;
     }
 
-    if (!isOnline) {
-      onShowToast("Internet connection required to modify master data.", "error");
-      return;
-    }
-
     setIsSyncing(true);
     try {
       if (editingDesigId) {
@@ -243,79 +176,51 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
           Last_Modified: new Date().toISOString()
         };
 
-        const success = await googleSheetsService.pushRecord(
-          "jn_designations",
-          "Designation_ID",
-          editingDesigId,
-          updatedDesig
+        const list = designations.map((dg) =>
+          dg.Designation_ID === editingDesigId ? { ...dg, ...updatedDesig } : dg
         );
+        setDesignations(list);
+        saveDesignations(list);
+        setEditingDesigId(null);
+        setDesigName("");
+        setDesigDeptId("");
+        setDesigStatus("Active");
+        onShowToast("Designation updated successfully!", "success");
 
-        if (success) {
-          const list = designations.map((dg) =>
-            dg.Designation_ID === editingDesigId ? { ...dg, ...updatedDesig } : dg
-          );
-          setDesignations(list);
-          saveDesignations(list);
-          setEditingDesigId(null);
-          setDesigName("");
-          setDesigDeptId("");
-          setDesigStatus("Active");
-          onShowToast("Designation updated successfully!", "success");
-
-          addAuditLog(
-            currentUser.email,
-            currentUser.name,
-            currentUser.role,
-            "DESIGNATION_EDIT",
-            "DATABASE",
-            `Designation updated: "${desigName}" (ID: ${editingDesigId})`
-          );
-        } else {
-          onShowToast("Backend server rejected the designation update.", "error");
-        }
+        addAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "DESIGNATION_EDIT",
+          "DATABASE",
+          `Designation updated: "${desigName}" (ID: ${editingDesigId})`
+        );
       } else {
-        // Create Designation - Send ONLY business fields, let server generate the ID
-        const newDesigPayload = {
+        // Create Designation
+        const createdDesig: Designation = {
+          Designation_ID: `DES${Date.now().toString().slice(-4)}`,
           Designation_Name: desigName.trim(),
           Department_ID: desigDeptId,
           Status: desigStatus,
           Last_Modified: new Date().toISOString()
         };
 
-        const res = await googleSheetsService["makePostRequest"]({
-          action: "create",
-          table: "jn_designations",
-          data: newDesigPayload
-        });
+        const list = [...designations, createdDesig];
+        setDesignations(list);
+        saveDesignations(list);
+        setDesigName("");
+        setDesigDeptId("");
+        setDesigStatus("Active");
+        onShowToast(`Designation created successfully with ID: ${createdDesig.Designation_ID}!`, "success");
 
-        if (res && res.success && res.data) {
-          const createdDesig: Designation = {
-            Designation_ID: res.data.Designation_ID || res.data.Designation_Id || `DES${Date.now().toString().slice(-4)}`,
-            Designation_Name: res.data.Designation_Name || desigName.trim(),
-            Department_ID: res.data.Department_ID || desigDeptId,
-            Status: res.data.Status || desigStatus,
-            Last_Modified: res.data.Last_Modified || new Date().toISOString()
-          };
-
-          const list = [...designations, createdDesig];
-          setDesignations(list);
-          saveDesignations(list);
-          setDesigName("");
-          setDesigDeptId("");
-          setDesigStatus("Active");
-          onShowToast(`Designation created successfully with ID: ${createdDesig.Designation_ID}!`, "success");
-
-          addAuditLog(
-            currentUser.email,
-            currentUser.name,
-            currentUser.role,
-            "DESIGNATION_CREATE",
-            "DATABASE",
-            `Designation registered: "${createdDesig.Designation_Name}" with backend generated ID: ${createdDesig.Designation_ID}`
-          );
-        } else {
-          onShowToast("Backend failed to generate Designation ID.", "error");
-        }
+        addAuditLog(
+          currentUser.email,
+          currentUser.name,
+          currentUser.role,
+          "DESIGNATION_CREATE",
+          "DATABASE",
+          `Designation registered: "${createdDesig.Designation_Name}" with ID: ${createdDesig.Designation_ID}`
+        );
       }
     } catch (err: any) {
       onShowToast(err.message || "Failed to save designation.", "error");
@@ -332,35 +237,25 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
   };
 
   const handleDeleteDesig = async (id: string) => {
-    if (!isOnline) {
-      onShowToast("Internet connection required to modify master data.", "error");
-      return;
-    }
-
     if (!window.confirm("Are you sure you want to delete this Designation?")) {
       return;
     }
 
     setIsSyncing(true);
     try {
-      const success = await googleSheetsService.deleteRecord("jn_designations", "Designation_ID", id);
-      if (success) {
-        const list = designations.filter((d) => d.Designation_ID !== id);
-        setDesignations(list);
-        saveDesignations(list);
-        onShowToast("Designation deleted successfully!", "success");
+      const list = designations.filter((d) => d.Designation_ID !== id);
+      setDesignations(list);
+      saveDesignations(list);
+      onShowToast("Designation deleted successfully!", "success");
 
-        addAuditLog(
-          currentUser.email,
-          currentUser.name,
-          currentUser.role,
-          "DESIGNATION_DELETE",
-          "DATABASE",
-          `Designation deleted (ID: ${id})`
-        );
-      } else {
-        onShowToast("Failed to delete designation from Google Sheets.", "error");
-      }
+      addAuditLog(
+        currentUser.email,
+        currentUser.name,
+        currentUser.role,
+        "DESIGNATION_DELETE",
+        "DATABASE",
+        `Designation deleted (ID: ${id})`
+      );
     } catch (err: any) {
       onShowToast(err.message || "Failed to delete designation.", "error");
     } finally {
@@ -378,16 +273,16 @@ export const DepartmentsDesignationsStudio: React.FC<Props> = ({ currentUser, on
             <h3 className="text-lg font-bold text-slate-100">Departments & Designations Master</h3>
             {isOnline ? (
               <span className="flex items-center gap-1 text-[10px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded border border-green-500/20 font-medium">
-                <Wifi className="w-3 h-3" /> Online Gateway Active
+                <Wifi className="w-3 h-3" /> Online
               </span>
             ) : (
               <span className="flex items-center gap-1 text-[10px] bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20 font-medium">
-                <WifiOff className="w-3 h-3" /> Offline Mode Blocked
+                <WifiOff className="w-3 h-3" /> Offline
               </span>
             )}
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Configure dynamic corporate hierarchy divisions. Updates require direct synchronization with Google Sheets.
+            Configure dynamic corporate hierarchy divisions.
           </p>
         </div>
 

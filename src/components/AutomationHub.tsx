@@ -1447,25 +1447,25 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
 
           </div>
 
-          {/* Right Panel: Google Sheets Schemas & Layout Specifications */}
+          {/* Right Panel: Supabase Schemas & Specifications */}
           <div className="space-y-6">
             
-            {/* Google Sheets Connection Status Card */}
+            {/* Supabase Connection Status Card */}
             <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
               <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-display font-bold text-slate-800 text-xs uppercase tracking-wider">Google Sheets Integration</h3>
+                <Database className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-display font-bold text-slate-800 text-xs uppercase tracking-wider">Supabase Cloud Engine</h3>
               </div>
               <p className="text-xs text-slate-500 font-sans leading-relaxed">
-                JN OfficeOS architecture is fully prepared for cloud storage synchronization. Repositories support serialization to specific sheets using predefined schemas. No mock databases are used in production.
+                JN OfficeOS architecture runs with Supabase PostgreSQL as the authoritative Source of Truth. Automations and Realtime Event channels trigger directly from backend database events.
               </p>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
                 <div>
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Sync Protocol</span>
-                  <span className="text-xs text-[#0D2C6C] font-extrabold font-sans">Google Apps Script Ready</span>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Database Protocol</span>
+                  <span className="text-xs text-[#0D2C6C] font-extrabold font-sans">Supabase PostgreSQL 15+ Active</span>
                 </div>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" title="Google Sheets Channel Open"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" title="Supabase Connected"></span>
               </div>
             </div>
 
@@ -1478,20 +1478,20 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
 
               <div className="space-y-3.5 text-[11px] font-mono leading-relaxed text-white/80">
                 <div className="border-b border-white/10 pb-2">
-                  <span className="block font-bold text-white uppercase text-[10px]">1. Notifications Sheet Schema</span>
-                  <p className="text-[10px] text-white/60 mb-1">Sheet Name: "System_Notifications"</p>
+                  <span className="block font-bold text-white uppercase text-[10px]">1. Notifications Table Schema</span>
+                  <p className="text-[10px] text-white/60 mb-1">Table: "jn_notifications"</p>
                   <span className="text-[#D4AF37]">Columns:</span> id, timestamp, type, title, message, channel, isRead, isArchived, priority, targetUserId, metadata (JSON)
                 </div>
 
                 <div className="border-b border-white/10 pb-2">
-                  <span className="block font-bold text-white uppercase text-[10px]">2. Automation Config Sheet Schema</span>
-                  <p className="text-[10px] text-white/60 mb-1">Sheet Name: "Automation_Rules_Config"</p>
+                  <span className="block font-bold text-white uppercase text-[10px]">2. Automation Rules Table Schema</span>
+                  <p className="text-[10px] text-white/60 mb-1">Table: "jn_automation_rules"</p>
                   <span className="text-[#D4AF37]">Columns:</span> id, name, description, triggerEvent, conditions (JSON), actions (JSON), isEnabled, priority, createdAt, updatedAt
                 </div>
 
                 <div>
-                  <span className="block font-bold text-white uppercase text-[10px]">3. Reminders Sheet Schema</span>
-                  <p className="text-[10px] text-white/60 mb-1">Sheet Name: "System_Reminders"</p>
+                  <span className="block font-bold text-white uppercase text-[10px]">3. Reminders Table Schema</span>
+                  <p className="text-[10px] text-white/60 mb-1">Table: "jn_reminders"</p>
                   <span className="text-[#D4AF37]">Columns:</span> id, title, description, category, dueDate, status, assignedToId, createdAt, completedAt, clientId, clientName, caseId
                 </div>
               </div>

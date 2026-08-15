@@ -15,7 +15,6 @@ import { getUsers, saveUsers, addAuditLog, getSettings, MODULES_LIST, getDefault
 import { getPermissionLabel, getPermissionCategory } from "../lib/permissions";
 import { hashPassword } from "../lib/hash";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ModalFramework";
-import { googleSheetsService } from "../lib/googleSheetsService";
 
 interface UserManagementProps {
   currentUser: User;
@@ -637,63 +636,6 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
     }
   };
 
-  // Google Sheets Push/Pull synchronization
-  const handleSyncToSheets = async () => {
-    if (!firmSettings.isGoogleSheetsConnected) {
-      alert("Connection Blocked: Please enable Google Sheets connectivity inside Practice Settings first.");
-      return;
-    }
-
-    setIsSyncing(true);
-    setSyncMessage("Synchronizing schema mapping to spreadsheet...");
-
-    try {
-      // Preserve original Apps Script gateway URL instead of overwriting with spreadsheet view URL
-      const mapped = users.map(u => ({
-        "User ID": u.id,
-        "Email": u.email,
-        "Name": u.name,
-        "Username": u.username,
-        "Mobile": u.mobile,
-        "Designation": u.designation,
-        "Designation_ID": (u as any).designationId || "DES02",
-        "Role": u.role,
-        "Status": u.status,
-        "Joining Date": u.joiningDate,
-        "Password Hash": u.passwordHash,
-        "Permissions": u.permissions,
-        "Created At": u.createdAt,
-        "Department_ID": (u as any).departmentId || "DEP01"
-      }));
-
-      const success = await googleSheetsService.bulkSync("Users", "User ID", mapped);
-
-      if (!success) {
-        throw new Error("Google Sheets Service bulkSync returned failure status.");
-      }
-
-      // Record transaction
-      const now = new Date().toISOString();
-      localStorage.setItem("jn_officeos_users_last_sync", now);
-      setLastSyncTime(now);
-
-      onAddAuditLog(
-        "DATABASE_SYNCED",
-        "DATABASE",
-        `Synchronized ${users.length} active user schemas and security matrices to Google Sheets.`
-      );
-
-      setSyncMessage("Sheets Sync Complete! All staff credentials mirrored successfully.");
-      setTimeout(() => setSyncMessage(null), 4000);
-    } catch (e) {
-      console.error(e);
-      setSyncMessage("Sync completed with local database cache mirror fallback.");
-      setTimeout(() => setSyncMessage(null), 4000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       
@@ -743,15 +685,15 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Sheets Synchronization</p>
-              <h3 className="text-sm font-bold font-sans mt-2 text-slate-800 truncate">
-                {firmSettings.isGoogleSheetsConnected ? "CONNECTED" : "OFFLINE CACHE"}
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Database Engine</p>
+              <h3 className="text-sm font-bold font-sans mt-2 text-emerald-700 truncate">
+                CONNECTED
               </h3>
             </div>
-            <FileSpreadsheet className="w-5 h-5 text-emerald-500" />
+            <Database className="w-5 h-5 text-emerald-500" />
           </div>
           <p className="text-[9px] text-slate-400 truncate mt-2 font-mono">
-            {lastSyncTime ? `Last Synced: ${new Date(lastSyncTime).toLocaleTimeString()}` : "Not Synced yet"}
+            Supabase PostgreSQL RDBMS
           </p>
         </div>
       </div>
@@ -774,12 +716,12 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
 
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={handleSyncToSheets}
-                className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Synchronize Users database with Google Sheets"
+                onClick={() => setUsers(getUsers())}
+                className="bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Reload Users directory from database"
               >
-                <FileSpreadsheet className="w-4 h-4" />
-                {isSyncing ? "Syncing Sheets..." : "Sync Sheets"}
+                <RefreshCw className="w-4 h-4 text-[#0D2C6C]" />
+                Refresh
               </button>
 
               <button

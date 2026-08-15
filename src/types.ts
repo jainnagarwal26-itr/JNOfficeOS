@@ -96,9 +96,6 @@ export interface FirmSettings {
   termsAndConditions: string[];
   declaration: string;
   signatureImage: string | null; // Base64 or URL
-  isGoogleSheetsConnected: boolean;
-  connectedSpreadsheetId: string | null;
-  connectedSpreadsheetUrl: string | null;
   sessionTimeoutMinutes: number;
 }
 

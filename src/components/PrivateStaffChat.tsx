@@ -9,7 +9,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   MessageSquare, Lock, Send, Trash2, Search, User as UserIcon, 
-  ShieldCheck, RefreshCw, AlertCircle, Clock, CheckCircle2, MoreVertical
+  ShieldCheck, RefreshCw, AlertCircle, Clock, CheckCircle2, MoreVertical,
+  Volume2, VolumeX, Bell, BellOff, Check, CheckCheck
 } from "lucide-react";
 import { User, UserRole } from "../types";
 import { 
@@ -18,9 +19,12 @@ import {
   PrivateChatMessage, 
   StaffChatDirectoryUser 
 } from "../lib/privateChatRepository";
+import { privateChatNotificationService } from "../lib/privateChatNotificationService";
 
 interface PrivateStaffChatProps {
   currentUser: User;
+  targetChatId?: string | null;
+  targetUserId?: string | null;
   onAddAuditLog: (
     action: string,
     category: "AUTH" | "SECURITY" | "DATABASE" | "SETTINGS" | "SYSTEM",
@@ -28,7 +32,12 @@ interface PrivateStaffChatProps {
   ) => void;
 }
 
-export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffChatProps) {
+export function PrivateStaffChat({ 
+  currentUser, 
+  targetChatId, 
+  targetUserId, 
+  onAddAuditLog 
+}: PrivateStaffChatProps) {
   const isOwner = currentUser.role === UserRole.OWNER || currentUser.role === "SUPERADMIN" || currentUser.email?.toLowerCase().includes("jainnagarwal26");
   const currentUuid = PrivateChatRepository.resolveUuid(currentUser);
 
@@ -59,10 +68,28 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
     scrollToBottom();
   }, [messages]);
 
+  // Sound & Notification state
+  const [isMuted, setIsMuted] = useState<boolean>(() => privateChatNotificationService.isSoundMuted());
+  const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(() => privateChatNotificationService.getBrowserPermission());
+
+  // Report active chat ID to central notification service for active suppression
+  useEffect(() => {
+    if (currentChat) {
+      privateChatNotificationService.setActiveChatId(currentChat.id);
+      PrivateChatRepository.markConversationAsRead(currentChat.id, currentUuid);
+    } else {
+      privateChatNotificationService.setActiveChatId(null);
+    }
+
+    return () => {
+      privateChatNotificationService.setActiveChatId(null);
+    };
+  }, [currentChat, currentUuid]);
+
   // Load Staff Directory & Recent Chats on mount
   useEffect(() => {
     loadDirectoryAndChats();
-  }, [currentUser]);
+  }, [currentUser, targetChatId, targetUserId]);
 
   const loadDirectoryAndChats = async () => {
     setIsLoadingDirectory(true);
@@ -74,7 +101,29 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
       const chats = await PrivateChatRepository.getMyPrivateChats(currentUser);
       setActiveChats(chats);
 
-      // Auto-select first staff member if available (or Owner if staff logged in)
+      // 1. If targetUserId is given, find and select
+      if (targetUserId) {
+        const targetStaff = directory.find(s => s.id === targetUserId);
+        if (targetStaff) {
+          handleSelectStaff(targetStaff);
+          return;
+        }
+      }
+
+      // 2. If targetChatId is given, find chat and select participant
+      if (targetChatId) {
+        const targetChat = chats.find(c => c.id === targetChatId);
+        if (targetChat) {
+          const otherId = targetChat.participantOneId === currentUuid ? targetChat.participantTwoId : targetChat.participantOneId;
+          const targetStaff = directory.find(s => s.id === otherId);
+          if (targetStaff) {
+            handleSelectStaff(targetStaff);
+            return;
+          }
+        }
+      }
+
+      // 3. Fallback auto-select first staff member if available
       if (directory.length > 0 && !selectedStaff) {
         handleSelectStaff(directory[0]);
       }
@@ -97,8 +146,12 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
       const chatRes = await PrivateChatRepository.getOrCreatePrivateChat(currentUuid, staff.id);
       if (chatRes.success && chatRes.chat) {
         setCurrentChat(chatRes.chat);
+        privateChatNotificationService.setActiveChatId(chatRes.chat.id);
         const msgs = await PrivateChatRepository.getChatMessages(chatRes.chat.id);
         setMessages(msgs);
+        // Mark messages as read
+        await PrivateChatRepository.markConversationAsRead(chatRes.chat.id, currentUuid);
+        await privateChatNotificationService.refreshUnreadCount();
       } else {
         setError(chatRes.error || "Failed to initialize conversation.");
       }
@@ -110,16 +163,21 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
     }
   };
 
-  // Realtime subscription for incoming messages
+  // Realtime subscription for incoming messages in active conversation
   useEffect(() => {
     if (!currentChat) return;
 
     const unsubscribe = PrivateChatRepository.subscribeToChat(currentChat.id, (newMsg) => {
       setMessages((prev) => {
-        // Prevent duplicate append if sender already appended locally
         if (prev.some((m) => m.id === newMsg.id)) return prev;
         return [...prev, newMsg];
       });
+
+      // If message is from other user, automatically mark as read since chat is open
+      if (newMsg.senderId !== currentUuid) {
+        PrivateChatRepository.markConversationAsRead(currentChat.id, currentUuid);
+        privateChatNotificationService.refreshUnreadCount();
+      }
     });
 
     return () => {
@@ -127,7 +185,18 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
         unsubscribe();
       }
     };
-  }, [currentChat]);
+  }, [currentChat, currentUuid]);
+
+  const toggleSound = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    privateChatNotificationService.setSoundMuted(nextMuted);
+  };
+
+  const handleEnableNotifications = async () => {
+    const res = await privateChatNotificationService.requestBrowserPermission();
+    setBrowserPermission(res);
+  };
 
   // Handle Send Message
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -258,9 +327,35 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Sound Toggle Control */}
+          <button
+            onClick={toggleSound}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+              isMuted 
+                ? "bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200" 
+                : "bg-amber-50 border-amber-200/80 text-amber-800 hover:bg-amber-100"
+            }`}
+            title={isMuted ? "Unmute notification chime" : "Mute notification chime"}
+          >
+            {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#D4AF37]" />}
+            <span>{isMuted ? "Muted" : "Chime On"}</span>
+          </button>
+
+          {/* Browser Notification Opt-In */}
+          {browserPermission !== "granted" && browserPermission !== "denied" && (
+            <button
+              onClick={handleEnableNotifications}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D2C6C] hover:bg-[#092254] text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+              title="Enable Windows / Browser desktop notifications"
+            >
+              <Bell className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Enable Desktop Alerts</span>
+            </button>
+          )}
+
           <button
             onClick={loadDirectoryAndChats}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold shadow-sm transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold shadow-sm transition-all cursor-pointer"
             title="Refresh conversations"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDirectory ? "animate-spin text-[#D4AF37]" : ""}`} />
@@ -462,7 +557,17 @@ export function PrivateStaffChat({ currentUser, onAddAuditLog }: PrivateStaffCha
                               isSelf ? "text-white/60" : "text-slate-400"
                             }`}>
                               <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                              {isSelf && <CheckCircle2 className="w-2.5 h-2.5 text-[#D4AF37]" />}
+                              {isSelf && (
+                                msg.isRead ? (
+                                  <span title={`Read: ${msg.readAt ? new Date(msg.readAt).toLocaleTimeString() : "Delivered"}`} className="flex items-center text-cyan-300">
+                                    <CheckCheck className="w-3.5 h-3.5 text-cyan-300" />
+                                  </span>
+                                ) : (
+                                  <span title="Delivered to cloud" className="flex items-center text-[#D4AF37]">
+                                    <Check className="w-3 h-3 text-[#D4AF37]" />
+                                  </span>
+                                )
+                              )}
                             </div>
                           </div>
                         </div>
