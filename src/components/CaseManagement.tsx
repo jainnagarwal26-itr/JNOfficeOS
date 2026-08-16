@@ -9,7 +9,8 @@ import {
   Plus, Search, Filter, Calendar, FileText, Check, X, Shield, Clock, Database, 
   Sparkles, FileSpreadsheet, Lock, AlertCircle, Landmark, FolderOpen, CalendarDays, 
   Receipt, BarChart3, UserCheck, AlertOctagon, HelpCircle, ChevronRight, Download, 
-  Eye, CornerDownRight, PlusCircle, Trash, Trash2, Send, CheckCircle2, ChevronDown
+  Eye, CornerDownRight, PlusCircle, Trash, Trash2, Send, CheckCircle2, ChevronDown,
+  RefreshCw
 } from "lucide-react";
 import { User, UserRole, Client, Service, Case, CasePriority, CaseStatus, CaseChecklistItem, CaseAttachment, CaseNote } from "../types";
 import { getClients, getServices, getUsers, getWorkflows, saveWorkflows, getNextWorkflowId } from "../lib/db";
@@ -68,12 +69,14 @@ export default function CaseManagement({ currentUser, onAddAuditLog }: CaseManag
   const [invoiceSubtotal, setInvoiceSubtotal] = useState<number>(0);
   const [invoiceGstRate, setInvoiceGstRate] = useState<number>(18);
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
+  const [isSubmittingInvoice, setIsSubmittingInvoice] = useState(false);
 
   // Payment Form state
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState("UPI Transfer");
   const [paymentRef, setPaymentRef] = useState("");
   const [paymentRemarks, setPaymentRemarks] = useState("");
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // Attachment Form state
   const [attachFileName, setAttachFileName] = useState("");
@@ -274,36 +277,45 @@ export default function CaseManagement({ currentUser, onAddAuditLog }: CaseManag
   };
 
   // Invoice generator handler
-  const handleGenerateInvoice = (e: React.FormEvent, caseId: string) => {
+  const handleGenerateInvoice = async (e: React.FormEvent, caseId: string) => {
     e.preventDefault();
     if (invoiceSubtotal <= 0 || !invoiceDueDate) {
       alert("Please configure taxable subtotal and due date.");
       return;
     }
+    setIsSubmittingInvoice(true);
     try {
-      CaseRepository.generateCaseInvoice(
+      const res = await CaseRepository.generateCaseInvoiceAsync(
         caseId,
         invoiceDueDate,
         invoiceSubtotal,
         invoiceGstRate,
         currentUser
       );
+      if (!res.success) {
+        alert(`Invoice Generation Failed: ${res.error || "Failed to generate central invoice."}`);
+        setIsSubmittingInvoice(false);
+        return;
+      }
       setIsInvoiceModalOpen(false);
       refreshData();
     } catch (err: any) {
-      alert(err.message);
+      alert(`Invoice Generation Error: ${err.message}`);
+    } finally {
+      setIsSubmittingInvoice(false);
     }
   };
 
   // Payment Handler
-  const handleAddPayment = (e: React.FormEvent, caseId: string) => {
+  const handleAddPayment = async (e: React.FormEvent, caseId: string) => {
     e.preventDefault();
     if (paymentAmount <= 0) {
       alert("Payment amount must be greater than zero.");
       return;
     }
+    setIsSubmittingPayment(true);
     try {
-      CaseRepository.addCasePayment(
+      const res = await CaseRepository.addCasePaymentAsync(
         caseId,
         paymentAmount,
         paymentMode,
@@ -311,13 +323,20 @@ export default function CaseManagement({ currentUser, onAddAuditLog }: CaseManag
         paymentRemarks,
         currentUser
       );
+      if (!res.success) {
+        alert(`Payment Recording Failed: ${res.error || "Failed to record payment in central ledger."}`);
+        setIsSubmittingPayment(false);
+        return;
+      }
       setIsPaymentModalOpen(false);
       setPaymentAmount(0);
       setPaymentRef("");
       setPaymentRemarks("");
       refreshData();
     } catch (err: any) {
-      alert(err.message);
+      alert(`Payment Recording Error: ${err.message}`);
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -1402,9 +1421,19 @@ export default function CaseManagement({ currentUser, onAddAuditLog }: CaseManag
                 </button>
                 <button
                   type="submit"
-                  className="bg-[#0D2C6C] hover:bg-blue-950 text-white hover:text-[#D4AF37] font-extrabold px-5 py-2.5 rounded-xl shadow transition-all cursor-pointer animate-pulse"
+                  disabled={isSubmittingInvoice}
+                  className={`bg-[#0D2C6C] hover:bg-blue-950 text-white hover:text-[#D4AF37] font-extrabold px-5 py-2.5 rounded-xl shadow transition-all cursor-pointer flex items-center gap-2 ${
+                    isSubmittingInvoice ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
                 >
-                  Authorize & Print Invoice
+                  {isSubmittingInvoice ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Authorizing & Generating...</span>
+                    </>
+                  ) : (
+                    "Authorize & Print Invoice"
+                  )}
                 </button>
               </div>
 
@@ -1498,9 +1527,19 @@ export default function CaseManagement({ currentUser, onAddAuditLog }: CaseManag
                 </button>
                 <button
                   type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow transition-all cursor-pointer"
+                  disabled={isSubmittingPayment}
+                  className={`bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow transition-all cursor-pointer flex items-center gap-2 ${
+                    isSubmittingPayment ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
                 >
-                  Record Payment
+                  {isSubmittingPayment ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Recording Receipt...</span>
+                    </>
+                  ) : (
+                    "Record Payment"
+                  )}
                 </button>
               </div>
 

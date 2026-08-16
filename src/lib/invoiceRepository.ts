@@ -1,12 +1,10 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- * JN OfficeOS Enterprise RDBMS - Module 5: Invoice Repository Access Layer
- */
-
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { EnterpriseInvoice } from "../types/invoice";
 
+/**
+ * @deprecated RETIRED IN PHASE 3B: Use CentralInvoiceRepository from src/lib/centralInvoiceRepository.ts instead.
+ * Do not use for new billing flows. Retained for historical build-reference only.
+ */
 export class InvoiceRepository {
 
   async fetchAllInvoices(statusFilter?: string): Promise<EnterpriseInvoice[]> {

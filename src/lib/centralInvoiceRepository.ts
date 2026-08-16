@@ -15,9 +15,12 @@ export interface CreateCentralInvoicePayload {
   clientName: string;
   clientGstin?: string;
   clientAddress?: string;
+  invoiceType?: string; // Tax Invoice, Bill of Supply, Proforma Invoice, etc.
+  assignedStaffIds?: string[]; // Array of assigned staff IDs
   invoiceDate: string; // YYYY-MM-DD
   dueDate: string; // YYYY-MM-DD
   subTotal: number;
+  discountAmount?: number;
   cgstAmount?: number;
   sgstAmount?: number;
   igstAmount?: number;
@@ -31,9 +34,11 @@ export interface CreateCentralInvoicePayload {
   items: Array<{
     serviceId?: string | null;
     serviceName: string;
+    description?: string;
     sacCode?: string;
     quantity: number;
     unitPrice: number;
+    discount?: number;
     taxableAmount: number;
     gstRate: number;
     gstAmount: number;
@@ -59,7 +64,8 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
   const normalizedItems: InvoiceItem[] = (itemsRaw || []).map((it: any, idx: number) => {
     const qty = Number(it.quantity || 1);
     const unitPrice = Number(it.unit_price ?? it.rate ?? 0);
-    const taxableVal = Number(it.taxable_amount ?? (qty * unitPrice));
+    const discount = Number(it.discount ?? 0);
+    const taxableVal = Number(it.taxable_amount ?? (qty * unitPrice - discount));
     const gstRate = Number(it.gst_rate ?? 0);
     const gstAmount = Number(it.gst_amount ?? ((taxableVal * gstRate) / 100));
     const totalAmount = Number(it.total_amount ?? (taxableVal + gstAmount));
@@ -71,10 +77,10 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
     return {
       id: it.id || `item_${idx + 1}`,
       serviceName: it.service_name || "Professional Services",
-      description: it.sac_code ? `SAC: ${it.sac_code}` : (it.description || ""),
+      description: it.description !== undefined && it.description !== null && it.description !== "" ? it.description : (it.sac_code ? `SAC: ${it.sac_code}` : ""),
       quantity: qty,
       rate: unitPrice,
-      discount: 0,
+      discount: discount,
       taxableValue: parseFloat(taxableVal.toFixed(2)),
       gstRate: gstRate,
       cgst: parseFloat(cgst.toFixed(2)),
@@ -91,23 +97,27 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
   const sgstAmount = Number(row.sgst_amount ?? 0);
   const igstAmount = Number(row.igst_amount ?? 0);
   const amountPaid = Number(row.amount_paid ?? 0);
+  const discountAmount = Number(row.discount_amount ?? 0);
+  const assignedStaff = Array.isArray(row.assigned_staff) 
+    ? row.assigned_staff 
+    : (row.assigned_staff ? [row.assigned_staff] : ["usr_owner_001"]);
 
   return {
     id: row.invoice_number,
     uuid: row.id,
-    type: "Tax Invoice",
+    type: (row.invoice_type as any) || "Tax Invoice",
     caseId: row.source_reference_id || "",
     clientId: row.client_id || (row.client_name ? "walk-in" : ""),
     clientName: row.client_name || "Client",
     serviceId: normalizedItems[0]?.id || "",
     serviceName: normalizedItems[0]?.serviceName || "Professional Advisory Services",
-    assignedStaffIds: ["usr_owner_001"],
+    assignedStaffIds: assignedStaff,
     workflowId: undefined,
     date: row.invoice_date || new Date().toISOString().split("T")[0],
     dueDate: row.due_date || row.invoice_date || new Date().toISOString().split("T")[0],
     subTotal: subTotal,
-    discountAmount: 0,
-    taxableAmount: subTotal > 0 ? subTotal : totalAmount,
+    discountAmount: discountAmount,
+    taxableAmount: subTotal > 0 ? (subTotal - discountAmount) : totalAmount,
     cgstAmount: cgstAmount,
     sgstAmount: sgstAmount,
     igstAmount: igstAmount,
@@ -438,13 +448,16 @@ export class CentralInvoiceRepository {
         // Header Insert
         const headerPayload: any = {
           invoice_number: invoiceNumber,
+          invoice_type: payload.invoiceType || "Tax Invoice",
           invoice_date: payload.invoiceDate,
           due_date: payload.dueDate,
           client_id: clientUuid,
           client_name: clientName,
           client_gstin: clientGstin || null,
           client_address: clientAddress || null,
+          assigned_staff: payload.assignedStaffIds || ["usr_owner_001"],
           sub_total: payload.subTotal,
+          discount_amount: payload.discountAmount || 0.00,
           cgst_amount: cgst,
           sgst_amount: sgst,
           igst_amount: igst,
@@ -473,9 +486,11 @@ export class CentralInvoiceRepository {
           invoice_id: headerData.id,
           service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
           service_name: item.serviceName,
+          description: item.description || "",
           sac_code: item.sacCode || "998311",
           quantity: item.quantity,
           unit_price: item.unitPrice,
+          discount: item.discount || 0.00,
           taxable_amount: item.taxableAmount,
           gst_rate: item.gstRate,
           gst_amount: item.gstAmount,
@@ -521,46 +536,135 @@ export class CentralInvoiceRepository {
   }
 
   /**
-   * Super Admin Edit/Update Invoice in Supabase PostgreSQL
+   * Super Admin Edit/Update Invoice in Supabase PostgreSQL (Atomic Transactional Update)
    */
   public static async updateInvoice(
     invoiceIdOrNumber: string,
     payload: Partial<CreateCentralInvoicePayload> & { newInvoiceNumber?: string }
-  ): Promise<{ success: boolean; error?: string; invoice?: Invoice }> {
+  ): Promise<{ success: boolean; error?: string; invoice?: Invoice; warning?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
 
     try {
+      const clientMeta = payload.clientId !== undefined ? await this.resolveClientUuid(payload.clientId) : null;
+      const createdByUuid = payload.createdBy ? await this.resolveUserUuid(payload.createdBy) : null;
+
+      // 1. Attempt Atomic PostgreSQL RPC `update_central_invoice`
+      const rpcPayload: any = {
+        p_invoice_id_or_number: invoiceIdOrNumber,
+        p_new_invoice_number: payload.newInvoiceNumber || null,
+        p_invoice_type: payload.invoiceType || null,
+        p_invoice_date: payload.invoiceDate || null,
+        p_due_date: payload.dueDate || null,
+        p_client_id: clientMeta?.uuid || null,
+        p_client_name: payload.clientName || clientMeta?.clientName || null,
+        p_client_gstin: payload.clientGstin || clientMeta?.gstin || null,
+        p_client_address: payload.clientAddress || clientMeta?.address || null,
+        p_assigned_staff: payload.assignedStaffIds || null,
+        p_sub_total: payload.subTotal !== undefined ? payload.subTotal : null,
+        p_discount_amount: payload.discountAmount !== undefined ? payload.discountAmount : null,
+        p_cgst_amount: payload.cgstAmount !== undefined ? payload.cgstAmount : null,
+        p_sgst_amount: payload.sgstAmount !== undefined ? payload.sgstAmount : null,
+        p_igst_amount: payload.igstAmount !== undefined ? payload.igstAmount : null,
+        p_gst_amount: payload.gstAmount !== undefined ? payload.gstAmount : null,
+        p_total_amount: payload.totalAmount !== undefined ? payload.totalAmount : null,
+        p_notes: payload.notes !== undefined ? payload.notes : null,
+        p_terms: payload.terms !== undefined ? payload.terms : null,
+        p_updated_by: createdByUuid,
+        p_items: payload.items && payload.items.length > 0 ? payload.items.map(item => ({
+          service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
+          service_name: item.serviceName,
+          description: item.description || "",
+          sac_code: item.sacCode || "998311",
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          discount: item.discount || 0.00,
+          taxable_amount: item.taxableAmount,
+          gst_rate: item.gstRate,
+          gst_amount: item.gstAmount,
+          total_amount: item.totalAmount
+        })) : null
+      };
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("update_central_invoice", rpcPayload);
+
+      if (!rpcErr && rpcData && rpcData.success) {
+        if (rpcData.warning) {
+          console.warn("[CentralInvoiceRepository] update_central_invoice warning:", rpcData.warning);
+        }
+
+        addAuditLog(
+          "system@jn.internal",
+          "Central Invoice Engine",
+          UserRole.OWNER,
+          "INVOICE_UPDATED",
+          "DATABASE",
+          `Updated invoice ${rpcData.invoice_number} (Total: INR ${rpcData.total_amount}, Paid: INR ${rpcData.amount_paid}, Balance: INR ${rpcData.balance_due}, Status: ${rpcData.status}) in backend Supabase database`
+        );
+
+        const refreshed = await this.getInvoiceById(rpcData.invoice_id || invoiceIdOrNumber);
+        return { success: true, invoice: refreshed.invoice, warning: rpcData.warning };
+      }
+
+      if (rpcErr) {
+        console.warn("[CentralInvoiceRepository] RPC update_central_invoice error, attempting fallback:", rpcErr);
+      }
+
+      // 2. Fallback with strict payment integrity preservation (Rules 1-5)
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
+      let selQuery = supabase.from("jn_invoices").select("*");
+      if (isUuid) {
+        selQuery = selQuery.eq("id", invoiceIdOrNumber);
+      } else {
+        selQuery = selQuery.eq("invoice_number", invoiceIdOrNumber);
+      }
+
+      const { data: existingRow, error: selErr } = await selQuery.single();
+      if (selErr || !existingRow) throw selErr || new Error("Invoice not found for update.");
+
+      const currentPaid = Number(existingRow.amount_paid || 0);
+      const newTotal = payload.totalAmount !== undefined ? Number(payload.totalAmount) : Number(existingRow.total_amount);
+      const newBalance = Math.max(0, newTotal - currentPaid);
+      let newStatus: string;
+      let warningText: string | undefined = undefined;
+
+      if (currentPaid <= 0) {
+        newStatus = "UNPAID";
+      } else if (currentPaid < newTotal) {
+        newStatus = "PARTIALLY_PAID";
+      } else {
+        newStatus = "PAID";
+      }
+
+      if (currentPaid > newTotal) {
+        warningText = `Paid amount (₹${currentPaid.toLocaleString("en-IN")}) exceeds revised invoice total (₹${newTotal.toLocaleString("en-IN")}). Refund or credit-note review required.`;
+      }
+
       const updateHeader: any = {
+        total_amount: newTotal,
+        amount_paid: currentPaid, // Sacred payment preservation
+        balance_due: newBalance,
+        status: newStatus,
         updated_at: new Date().toISOString()
       };
 
       if (payload.newInvoiceNumber) updateHeader.invoice_number = payload.newInvoiceNumber;
+      if (payload.invoiceType) updateHeader.invoice_type = payload.invoiceType;
+      if (payload.assignedStaffIds) updateHeader.assigned_staff = payload.assignedStaffIds;
       if (payload.invoiceDate) updateHeader.invoice_date = payload.invoiceDate;
       if (payload.dueDate) updateHeader.due_date = payload.dueDate;
       if (payload.subTotal !== undefined) updateHeader.sub_total = payload.subTotal;
+      if (payload.discountAmount !== undefined) updateHeader.discount_amount = payload.discountAmount;
       if (payload.cgstAmount !== undefined) updateHeader.cgst_amount = payload.cgstAmount;
       if (payload.sgstAmount !== undefined) updateHeader.sgst_amount = payload.sgstAmount;
       if (payload.igstAmount !== undefined) updateHeader.igst_amount = payload.igstAmount;
       if (payload.gstAmount !== undefined) updateHeader.gst_amount = payload.gstAmount;
-      if (payload.totalAmount !== undefined) {
-        updateHeader.total_amount = payload.totalAmount;
-        updateHeader.balance_due = payload.totalAmount;
-      }
-      if (payload.notes) updateHeader.notes = payload.notes;
+      if (payload.notes !== undefined) updateHeader.notes = payload.notes;
+      if (payload.terms !== undefined) updateHeader.terms = payload.terms;
 
-      // Match by ID or invoice_number
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
-      let updateQuery = supabase
+      const { data: updatedHeader, error: headerErr } = await supabase
         .from("jn_invoices")
-        .update(updateHeader);
-
-      if (isUuid) {
-        updateQuery = updateQuery.eq("id", invoiceIdOrNumber);
-      } else {
-        updateQuery = updateQuery.eq("invoice_number", invoiceIdOrNumber);
-      }
-
-      const { data: updatedHeader, error: headerErr } = await updateQuery
+        .update(updateHeader)
+        .eq("id", existingRow.id)
         .select("id, invoice_number")
         .single();
 
@@ -574,9 +678,11 @@ export class CentralInvoiceRepository {
           invoice_id: updatedHeader.id,
           service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
           service_name: item.serviceName,
+          description: item.description || "",
           sac_code: item.sacCode || "998311",
           quantity: item.quantity,
           unit_price: item.unitPrice,
+          discount: item.discount || 0.00,
           taxable_amount: item.taxableAmount,
           gst_rate: item.gstRate,
           gst_amount: item.gstAmount,
@@ -596,7 +702,7 @@ export class CentralInvoiceRepository {
       );
 
       const refreshed = await this.getInvoiceById(updatedHeader.id);
-      return { success: true, invoice: refreshed.invoice };
+      return { success: true, invoice: refreshed.invoice, warning: warningText };
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] updateInvoice error:", err);
       return { success: false, error: err.message };
@@ -604,38 +710,37 @@ export class CentralInvoiceRepository {
   }
 
   /**
-   * Super Admin Delete/Void Invoice in Supabase PostgreSQL
+   * Super Admin Delete/Void Invoice in Supabase PostgreSQL via authoritative delete_central_invoice RPC
    */
-  public static async deleteInvoice(invoiceIdOrNumber: string): Promise<{ success: boolean; error?: string }> {
+  public static async deleteInvoice(invoiceIdOrNumber: string, deletedBy?: string): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
 
     try {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
-      let selQuery = supabase
-        .from("jn_invoices")
-        .select("id, invoice_number");
+      const deletedByUuid = await this.resolveUserUuid(deletedBy);
 
-      if (isUuid) {
-        selQuery = selQuery.eq("id", invoiceIdOrNumber);
-      } else {
-        selQuery = selQuery.eq("invoice_number", invoiceIdOrNumber);
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("delete_central_invoice", {
+        p_invoice_id_or_number: invoiceIdOrNumber,
+        p_deleted_by: deletedByUuid
+      });
+
+      if (rpcErr) {
+        console.error("[CentralInvoiceRepository] delete_central_invoice RPC error:", rpcErr);
+        return { success: false, error: rpcErr.message };
       }
 
-      const { data: target } = await selQuery.single();
-
-      if (target) {
-        await supabase.from("jn_invoice_items").delete().eq("invoice_id", target.id);
-        await supabase.from("jn_invoices").delete().eq("id", target.id);
-
-        addAuditLog(
-          "system@jn.internal",
-          "Central Invoice Engine",
-          UserRole.OWNER,
-          "INVOICE_DELETED",
-          "DATABASE",
-          `Permanently deleted invoice ${target.invoice_number} from Supabase database`
-        );
+      if (rpcRes && !rpcRes.success) {
+        return { success: false, error: rpcRes.error || "Deletion failed" };
       }
+
+      addAuditLog(
+        "system@jn.internal",
+        "Central Invoice Engine",
+        UserRole.OWNER,
+        "INVOICE_DELETED",
+        "DATABASE",
+        `Permanently deleted invoice ${rpcRes?.invoice_number || invoiceIdOrNumber} via delete_central_invoice RPC`
+      );
+
       return { success: true };
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] deleteInvoice error:", err);

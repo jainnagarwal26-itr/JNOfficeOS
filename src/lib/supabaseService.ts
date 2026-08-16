@@ -505,52 +505,13 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * @deprecated Retired in Phase 3B. Use CentralInvoiceRepository.createInvoice / updateInvoice instead.
+   */
   async upsertInvoice(invoice: any): Promise<{ success: boolean; error?: string }> {
-    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
-    try {
-      const paid = (invoice.payments || []).reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-      const grandTotal = invoice.grandTotal || invoice.total_amount || 0;
-      const balance = Math.max(0, grandTotal - paid);
-
-      const statusMap: Record<string, string> = {
-        "Paid": "PAID",
-        "Unpaid": "UNPAID",
-        "Partially Paid": "PARTIALLY_PAID",
-        "Overdue": "OVERDUE",
-        "Cancelled": "CANCELLED"
-      };
-
-      const payload = {
-        invoice_number: invoice.id || invoice.invoiceNumber,
-        invoice_date: invoice.date || new Date().toISOString().split("T")[0],
-        due_date: invoice.dueDate || invoice.date,
-        client_name: invoice.clientName,
-        client_gstin: invoice.clientGstin || null,
-        client_address: invoice.billingAddress || null,
-        sub_total: invoice.subTotal || grandTotal,
-        cgst_amount: invoice.cgstTotal || 0,
-        sgst_amount: invoice.sgstTotal || 0,
-        igst_amount: invoice.igstTotal || 0,
-        gst_amount: invoice.totalTax || ((invoice.cgstTotal || 0) + (invoice.sgstTotal || 0) + (invoice.igstTotal || 0)),
-        total_amount: grandTotal,
-        amount_paid: paid,
-        balance_due: balance,
-        status: statusMap[invoice.status] || invoice.status || "UNPAID",
-        notes: invoice.notes || null,
-        terms: invoice.termsConditions || invoice.terms || null,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error } = await supabase
-        .from("jn_invoices")
-        .upsert(payload, { onConflict: "invoice_number" });
-
-      if (error) throw error;
-      return { success: true };
-    } catch (err: any) {
-      console.error("[SupabaseService] upsertInvoice error:", err);
-      return { success: false, error: err.message };
-    }
+    console.warn("[SupabaseService] upsertInvoice is deprecated. Routing to CentralInvoiceRepository.");
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    return await CentralInvoiceRepository.createInvoice(invoice);
   }
 
   async upsertCase(c: any): Promise<{ success: boolean; error?: string }> {
@@ -591,16 +552,13 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * @deprecated Delegated to CentralInvoiceRepository in Phase 3B.
+   */
   async deleteInvoice(invoiceNumber: string): Promise<{ success: boolean; error?: string }> {
-    if (!isSupabaseConfigured()) return { success: false, error: "Supabase not configured" };
     try {
-      const { error } = await supabase
-        .from("jn_invoices")
-        .delete()
-        .eq("invoice_number", invoiceNumber);
-
-      if (error) throw error;
-      return { success: true };
+      const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+      return await CentralInvoiceRepository.deleteInvoice(invoiceNumber);
     } catch (err: any) {
       console.error("[SupabaseService] deleteInvoice error:", err);
       return { success: false, error: err.message };

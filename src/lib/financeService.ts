@@ -13,6 +13,10 @@ import { receiptRepository } from "./receiptRepository";
 import { expenseRepository } from "./expenseRepository";
 import { databaseFoundationService } from "./databaseFoundationService";
 
+/**
+ * @deprecated RETIRED IN PHASE 3B: Use FinancialRepository from src/lib/financialRepository.ts and CentralInvoiceRepository from src/lib/centralInvoiceRepository.ts instead.
+ * Do not use for new billing or payment flows. Retained for historical build-reference only.
+ */
 export class FinanceService {
 
   /**

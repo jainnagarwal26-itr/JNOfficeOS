@@ -465,6 +465,10 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           return;
         }
 
+        if (updateRes.warning) {
+          alert(`⚠️ Financial Notice:\n\n${updateRes.warning}`);
+        }
+
         onAddAuditLog(
           currentUser.email,
           currentUser.name,

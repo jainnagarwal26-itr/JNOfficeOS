@@ -1,12 +1,10 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- * JN OfficeOS Enterprise RDBMS - Module 5: Payment Receipt Repository Access Layer
- */
-
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { EnterpriseReceipt } from "../types/receipt";
 
+/**
+ * @deprecated RETIRED IN PHASE 3B: Use CentralInvoiceRepository from src/lib/centralInvoiceRepository.ts instead.
+ * Do not use for new payment/receipt flows. Retained for historical build-reference only.
+ */
 export class ReceiptRepository {
 
   async recordReceipt(receipt: EnterpriseReceipt): Promise<{ success: boolean; data?: EnterpriseReceipt; error?: string }> {

@@ -321,8 +321,8 @@ export class FinancialRepository {
       this.invoicesCache.splice(index, 1);
       this.persist();
 
-      import("./supabaseService").then(({ supabaseService }) => {
-        supabaseService.deleteInvoice(id);
+      import("./centralInvoiceRepository").then(({ CentralInvoiceRepository }) => {
+        CentralInvoiceRepository.deleteInvoice(id, currentUser?.id || currentUser?.email);
       });
       return true;
     }
@@ -422,9 +422,12 @@ export class FinancialRepository {
       CentralInvoiceRepository.createInvoice({
         clientId: newInvoice.clientId,
         clientName: newInvoice.clientName,
+        invoiceType: newInvoice.type,
+        assignedStaffIds: newInvoice.assignedStaffIds,
         invoiceDate: newInvoice.date,
         dueDate: newInvoice.dueDate,
         subTotal: newInvoice.subTotal,
+        discountAmount: newInvoice.discountAmount,
         cgstAmount: newInvoice.cgstAmount,
         sgstAmount: newInvoice.sgstAmount,
         igstAmount: newInvoice.igstAmount,
@@ -436,8 +439,10 @@ export class FinancialRepository {
         createdBy: currentUser.id,
         items: newInvoice.items.map(item => ({
           serviceName: item.serviceName,
+          description: item.description,
           quantity: item.quantity,
           unitPrice: item.rate,
+          discount: item.discount,
           taxableAmount: item.taxableValue,
           gstRate: item.gstRate,
           gstAmount: item.cgst + item.sgst + item.igst,
@@ -513,9 +518,12 @@ export class FinancialRepository {
     const centralRes = await CentralInvoiceRepository.createInvoice({
       clientId: invoiceData.clientId,
       clientName: invoiceData.clientName,
+      invoiceType: invoiceData.type,
+      assignedStaffIds: invoiceData.assignedStaffIds,
       invoiceDate: invoiceData.date,
       dueDate: invoiceData.dueDate,
       subTotal,
+      discountAmount,
       cgstAmount: parseFloat(cgstSum.toFixed(2)),
       sgstAmount: parseFloat(sgstSum.toFixed(2)),
       igstAmount: parseFloat(igstSum.toFixed(2)),
@@ -526,8 +534,10 @@ export class FinancialRepository {
       createdBy: currentUser.id,
       items: invoiceData.items.map(item => ({
         serviceName: item.serviceName,
+        description: item.description,
         quantity: item.quantity,
         unitPrice: item.rate,
+        discount: item.discount,
         taxableAmount: item.taxableValue,
         gstRate: item.gstRate,
         gstAmount: item.cgst + item.sgst + item.igst,
@@ -539,7 +549,7 @@ export class FinancialRepository {
       return { success: false, error: centralRes.error || "Failed to persist invoice to PostgreSQL database." };
     }
 
-    const assignedId = centralRes.invoiceNumber || customInvoiceNumber || this.generateInvoiceId();
+    const assignedId = centralRes.invoiceNumber || customInvoiceNumber || this.generateNextInvoiceNumber(invoiceData.type, invoiceData.date);
 
     const newInvoice: Invoice = {
       ...invoiceData,
@@ -657,9 +667,12 @@ export class FinancialRepository {
         newInvoiceNumber: updatedInvoice.id,
         clientId: updatedInvoice.clientId,
         clientName: updatedInvoice.clientName,
+        invoiceType: updatedInvoice.type,
+        assignedStaffIds: updatedInvoice.assignedStaffIds,
         invoiceDate: updatedInvoice.date,
         dueDate: updatedInvoice.dueDate,
         subTotal: updatedInvoice.subTotal,
+        discountAmount: updatedInvoice.discountAmount,
         cgstAmount: updatedInvoice.cgstAmount,
         sgstAmount: updatedInvoice.sgstAmount,
         igstAmount: updatedInvoice.igstAmount,
@@ -668,8 +681,10 @@ export class FinancialRepository {
         notes: updatedInvoice.items?.map(i => i.description).filter(Boolean).join("; ") || "",
         items: updatedInvoice.items.map(item => ({
           serviceName: item.serviceName,
+          description: item.description,
           quantity: item.quantity,
           unitPrice: item.rate,
+          discount: item.discount,
           taxableAmount: item.taxableValue,
           gstRate: item.gstRate,
           gstAmount: item.cgst + item.sgst + item.igst,
@@ -698,7 +713,7 @@ export class FinancialRepository {
     id: string,
     updates: Partial<Omit<Invoice, "createdAt" | "amountInWords" | "payments">> & { customInvoiceNumber?: string },
     currentUser: User
-  ): Promise<{ success: boolean; invoice?: Invoice; error?: string }> {
+  ): Promise<{ success: boolean; invoice?: Invoice; error?: string; warning?: string }> {
     this.init();
 
     if (currentUser.role !== UserRole.OWNER && !currentUser.permissions.invoiceCreate) {
@@ -755,9 +770,12 @@ export class FinancialRepository {
       clientName: updates.clientName !== undefined ? updates.clientName : existing?.clientName,
       clientAddress: updates.walkInAddress,
       clientGstin: updates.walkInGstin,
+      invoiceType: updates.type !== undefined ? updates.type : existing?.type,
+      assignedStaffIds: updates.assignedStaffIds !== undefined ? updates.assignedStaffIds : existing?.assignedStaffIds,
       invoiceDate: updates.date !== undefined ? updates.date : existing?.date,
       dueDate: updates.dueDate !== undefined ? updates.dueDate : existing?.dueDate,
       subTotal: parsedSubTotal,
+      discountAmount: discountAmount,
       cgstAmount: parseFloat(cgstSum.toFixed(2)),
       sgstAmount: parseFloat(sgstSum.toFixed(2)),
       igstAmount: parseFloat(igstSum.toFixed(2)),
@@ -766,8 +784,10 @@ export class FinancialRepository {
       notes: itemsWithTotals.map(i => i.description).filter(Boolean).join("; ") || "",
       items: itemsWithTotals.map(item => ({
         serviceName: item.serviceName,
+        description: item.description,
         quantity: item.quantity,
         unitPrice: item.rate,
+        discount: item.discount,
         taxableAmount: item.taxableValue,
         gstRate: item.gstRate,
         gstAmount: item.cgst + item.sgst + item.igst,
@@ -815,7 +835,7 @@ export class FinancialRepository {
       `Enterprise Invoice '${newId}' (${updatedInvoice.type}) updated for Client '${updatedInvoice.clientName}'.`
     );
 
-    return { success: true, invoice: updatedInvoice };
+    return { success: true, invoice: updatedInvoice, warning: centralRes.warning };
   }
 
   public static cancelInvoice(id: string, currentUser: User): Invoice {

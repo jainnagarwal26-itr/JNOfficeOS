@@ -570,34 +570,64 @@ export class CaseRepository {
     return updatedCase;
   }
 
-  public static generateCaseInvoice(
+  public static async generateCaseInvoiceAsync(
     caseId: string,
     dueDate: string,
     subTotal: number,
     gstRate: number,
     currentUser: User
-  ): Case {
+  ): Promise<{ success: boolean; case?: Case; error?: string; invoiceNumber?: string }> {
     this.init();
     const caseIndex = this.casesCache.findIndex(c => c.id === caseId);
-    if (caseIndex === -1) throw new Error("Case not found");
+    if (caseIndex === -1) return { success: false, error: "Case not found" };
 
     const currentCase = this.casesCache[caseIndex];
 
     // RBAC Check - Only Owners or authorized billing executives can invoice
-    if (currentUser.role !== UserRole.OWNER) {
-      throw new Error("Access Denied: Only Owner can authorize invoice generation.");
+    if (currentUser.role !== UserRole.OWNER && !currentUser.permissions?.invoiceCreate) {
+      return { success: false, error: "Access Denied: You do not have permission to authorize invoice generation." };
     }
 
     const timestamp = new Date().toISOString();
     const gstAmount = parseFloat(((subTotal * gstRate) / 100).toFixed(2));
     const totalAmount = parseFloat((subTotal + gstAmount).toFixed(2));
 
-    // Format like JNA/2026-27/0000X
-    const invoiceNumStr = (this.casesCache.length + 100).toString().padStart(5, "0");
-    const invoiceId = `JNA/2026-27/${invoiceNumStr}`;
+    // Route central authoritative invoice creation to Supabase PostgreSQL RPC
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    const centralRes = await CentralInvoiceRepository.createInvoice({
+      clientId: currentCase.clientId,
+      clientName: currentCase.clientName,
+      invoiceDate: timestamp.split("T")[0],
+      dueDate: dueDate,
+      subTotal: subTotal,
+      gstAmount: gstAmount,
+      totalAmount: totalAmount,
+      sourceModule: "CASE_MANAGEMENT",
+      sourceReferenceId: currentCase.id,
+      createdBy: currentUser.id,
+      items: [{
+        serviceId: currentCase.serviceId,
+        serviceName: currentCase.serviceName,
+        quantity: 1,
+        unitPrice: subTotal,
+        taxableAmount: subTotal,
+        gstRate: gstRate,
+        gstAmount: gstAmount,
+        totalAmount: totalAmount
+      }]
+    });
+
+    if (!centralRes.success || !centralRes.invoiceNumber) {
+      return { 
+        success: false, 
+        error: centralRes.error || "Failed to generate central invoice in PostgreSQL database." 
+      };
+    }
+
+    const authoritativeInvoiceNumber = centralRes.invoiceNumber;
 
     const newInvoice: CaseInvoice = {
-      id: invoiceId,
+      id: authoritativeInvoiceNumber,
       date: timestamp.split("T")[0],
       dueDate,
       subTotal,
@@ -608,37 +638,11 @@ export class CaseRepository {
       payments: []
     };
 
-    // Route central authoritative invoice creation to Supabase PostgreSQL
-    import("./centralInvoiceRepository").then(({ CentralInvoiceRepository }) => {
-      CentralInvoiceRepository.createInvoice({
-        clientId: currentCase.clientId,
-        clientName: currentCase.clientName,
-        invoiceDate: timestamp.split("T")[0],
-        dueDate: dueDate,
-        subTotal: subTotal,
-        gstAmount: gstAmount,
-        totalAmount: totalAmount,
-        sourceModule: "CASE_MANAGEMENT",
-        sourceReferenceId: currentCase.id,
-        createdBy: currentUser.id,
-        items: [{
-          serviceId: currentCase.serviceId,
-          serviceName: currentCase.serviceName,
-          quantity: 1,
-          unitPrice: subTotal,
-          taxableAmount: subTotal,
-          gstRate: gstRate,
-          gstAmount: gstAmount,
-          totalAmount: totalAmount
-        }]
-      });
-    });
-
     const invEvt: CaseTimelineEvent = {
       id: `evt_inv_${Date.now()}`,
       timestamp,
       title: "Invoice Generated",
-      details: `Premium luxury corporate invoice '${invoiceId}' generated. Bill Amount: INR ${totalAmount.toLocaleString("en-IN")}.`,
+      details: `Statutory corporate invoice '${authoritativeInvoiceNumber}' generated via Central Billing Engine. Bill Amount: INR ${totalAmount.toLocaleString("en-IN")}.`,
       userEmail: currentUser.email,
       userName: currentUser.name
     };
@@ -660,10 +664,142 @@ export class CaseRepository {
       currentUser.role,
       "INVOICE_GENERATED",
       "DATABASE",
-      `Invoice '${invoiceId}' raised against Case '${caseId}' for INR ${totalAmount.toLocaleString("en-IN")}.`
+      `Invoice '${authoritativeInvoiceNumber}' raised against Case '${caseId}' for INR ${totalAmount.toLocaleString("en-IN")}.`
     );
 
-    return updatedCase;
+    return { success: true, case: updatedCase, invoiceNumber: authoritativeInvoiceNumber };
+  }
+
+  public static generateCaseInvoice(
+    caseId: string,
+    dueDate: string,
+    subTotal: number,
+    gstRate: number,
+    currentUser: User
+  ): Case {
+    this.init();
+    const caseIndex = this.casesCache.findIndex(c => c.id === caseId);
+    if (caseIndex === -1) throw new Error("Case not found");
+
+    const currentCase = this.casesCache[caseIndex];
+    if (currentUser.role !== UserRole.OWNER && !currentUser.permissions?.invoiceCreate) {
+      throw new Error("Access Denied: Only Owner can authorize invoice generation.");
+    }
+
+    // Trigger async central invoice creation
+    this.generateCaseInvoiceAsync(caseId, dueDate, subTotal, gstRate, currentUser).catch(err => {
+      console.error("[CaseRepository] generateCaseInvoice error:", err);
+    });
+
+    return currentCase;
+  }
+
+  public static async addCasePaymentAsync(
+    caseId: string,
+    amount: number,
+    mode: string,
+    transactionRef: string,
+    remarks: string,
+    currentUser: User
+  ): Promise<{ success: boolean; case?: Case; error?: string; receiptNumber?: string }> {
+    this.init();
+    const caseIndex = this.casesCache.findIndex(c => c.id === caseId);
+    if (caseIndex === -1) return { success: false, error: "Case not found" };
+
+    const currentCase = this.casesCache[caseIndex];
+    if (!currentCase.invoice || !currentCase.invoice.id) {
+      return { success: false, error: "No active invoice exists for this case to process payment." };
+    }
+
+    const timestamp = new Date().toISOString();
+
+    // Normalize UI payment mode to Central Engine enum
+    const modeMap: Record<string, "Cash" | "UPI" | "NEFT" | "Cheque" | "Other"> = {
+      "Cash In Hand": "Cash",
+      "Cash": "Cash",
+      "UPI Transfer": "UPI",
+      "UPI": "UPI",
+      "NEFT/RTGS Bank Transfer": "NEFT",
+      "NEFT": "NEFT",
+      "RTGS": "NEFT",
+      "Cheque Realization": "Cheque",
+      "Cheque": "Cheque"
+    };
+    const standardMode = modeMap[mode] || "UPI";
+
+    // Call Central Authoritative Payment RPC (record_invoice_payment)
+    const { CentralInvoiceRepository } = await import("./centralInvoiceRepository");
+    const centralRes = await CentralInvoiceRepository.addInvoicePayment(
+      currentCase.invoice.id,
+      amount,
+      standardMode,
+      transactionRef || undefined,
+      remarks || `Case ${caseId} payment collection`,
+      currentUser
+    );
+
+    if (!centralRes.success || !centralRes.receiptNumber) {
+      return {
+        success: false,
+        error: centralRes.error || "Failed to record payment in PostgreSQL database."
+      };
+    }
+
+    const canonicalReceiptNumber = centralRes.receiptNumber;
+
+    const newPayment: CasePayment = {
+      id: canonicalReceiptNumber,
+      date: timestamp.split("T")[0],
+      amount,
+      mode: standardMode,
+      transactionRef,
+      remarks
+    };
+
+    const updatedPayments = [...(currentCase.invoice.payments || []), newPayment];
+    const totalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+    const isFullyPaid = totalPaid >= currentCase.invoice.totalAmount || centralRes.invoice?.status === "Paid";
+    const invoiceStatus: CaseInvoice["status"] = isFullyPaid ? "PAID" : "UNPAID";
+
+    const updatedInvoice: CaseInvoice = {
+      ...currentCase.invoice,
+      status: invoiceStatus,
+      payments: updatedPayments
+    };
+
+    const payEvt: CaseTimelineEvent = {
+      id: `evt_pay_${Date.now()}`,
+      timestamp,
+      title: "Payment Received",
+      details: `Payment receipt '${canonicalReceiptNumber}' recorded via [${standardMode}] in PostgreSQL database. Amount: INR ${amount.toLocaleString("en-IN")}. Invoice is now ${invoiceStatus}.`,
+      userEmail: currentUser.email,
+      userName: currentUser.name
+    };
+
+    const updatedCase: Case = {
+      ...currentCase,
+      invoice: updatedInvoice,
+      status: isFullyPaid ? "Completed" : currentCase.status,
+      completedDate: isFullyPaid ? (currentCase.completedDate || timestamp.split("T")[0]) : currentCase.completedDate,
+      timeline: [payEvt, ...currentCase.timeline],
+      updatedAt: timestamp
+    };
+
+    this.casesCache[caseIndex] = updatedCase;
+    this.persist();
+
+    // Audit Log
+    addAuditLog(
+      currentUser.email,
+      currentUser.name,
+      currentUser.role,
+      "PAYMENT_RECORDED",
+      "DATABASE",
+      `Payment of INR ${amount.toLocaleString("en-IN")} logged against invoice '${currentCase.invoice.id}' with receipt '${canonicalReceiptNumber}'.`
+    );
+
+    return { success: true, case: updatedCase, receiptNumber: canonicalReceiptNumber };
   }
 
   public static addCasePayment(
@@ -683,61 +819,10 @@ export class CaseRepository {
       throw new Error("No active invoice exists for this case to process payment.");
     }
 
-    const timestamp = new Date().toISOString();
-    const receiptNum = `REC/2026-27/${(currentCase.invoice.payments.length + 1).toString().padStart(5, "0")}`;
+    this.addCasePaymentAsync(caseId, amount, mode, transactionRef, remarks, currentUser).catch(err => {
+      console.error("[CaseRepository] addCasePayment error:", err);
+    });
 
-    const newPayment: CasePayment = {
-      id: receiptNum,
-      date: timestamp.split("T")[0],
-      amount,
-      mode,
-      transactionRef,
-      remarks
-    };
-
-    const updatedPayments = [...currentCase.invoice.payments, newPayment];
-    const totalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
-
-    let invoiceStatus: CaseInvoice["status"] = "UNPAID";
-    if (totalPaid >= currentCase.invoice.totalAmount) {
-      invoiceStatus = "PAID";
-    }
-
-    const updatedInvoice: CaseInvoice = {
-      ...currentCase.invoice,
-      status: invoiceStatus,
-      payments: updatedPayments
-    };
-
-    const payEvt: CaseTimelineEvent = {
-      id: `evt_pay_${Date.now()}`,
-      timestamp,
-      title: "Payment Received",
-      details: `Payment receipt '${receiptNum}' logged via [${mode}]. Amount: INR ${amount.toLocaleString("en-IN")}. Invoice is now ${invoiceStatus}.`,
-      userEmail: currentUser.email,
-      userName: currentUser.name
-    };
-
-    const updatedCase: Case = {
-      ...currentCase,
-      invoice: updatedInvoice,
-      timeline: [payEvt, ...currentCase.timeline],
-      updatedAt: timestamp
-    };
-
-    this.casesCache[caseIndex] = updatedCase;
-    this.persist();
-
-    // Audit Log
-    addAuditLog(
-      currentUser.email,
-      currentUser.name,
-      currentUser.role,
-      "PAYMENT_RECORDED",
-      "DATABASE",
-      `Payment of INR ${amount.toLocaleString("en-IN")} logged against invoice '${currentCase.invoice.id}'.`
-    );
-
-    return updatedCase;
+    return currentCase;
   }
 }
