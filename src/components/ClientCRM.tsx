@@ -91,7 +91,7 @@ export default function ClientCRM({ currentUser, onAddAuditLog }: ClientCRMProps
   const [timelineType, setTimelineType] = useState<ClientTimelineEvent["type"]>("NOTE");
 
   const isOwner = currentUser.role === UserRole.OWNER;
-  const canEdit = isOwner || hasPermission(currentUser, "clientCrmEdit");
+  const canEdit = isOwner || currentUser.role === UserRole.STAFF || hasPermission(currentUser, "clientCrmEdit");
   const allStaffUsers = getUsers().filter(u => u.status === "ACTIVE");
   const firmSettings = getSettings();
 

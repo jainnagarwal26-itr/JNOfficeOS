@@ -31,6 +31,11 @@ export function hasPermission(user: User | null, permissionKey: keyof StaffPermi
   }
   
   // Other roles (Staff, Manager, etc.) are evaluated dynamically
+  if (permissionKey === "clientCrmEdit" && (user.role === UserRole.STAFF || String(user.role).toLowerCase() === "staff")) {
+    return true;
+  }
+  
+  if (!user.permissions) return true;
   return !!user.permissions[permissionKey];
 }
 
