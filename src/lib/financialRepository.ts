@@ -781,7 +781,12 @@ export class FinancialRepository {
       igstAmount: parseFloat(igstSum.toFixed(2)),
       gstAmount: parseFloat((cgstSum + sgstSum + igstSum).toFixed(2)),
       totalAmount: grandTotal,
-      notes: itemsWithTotals.map(i => i.description).filter(Boolean).join("; ") || "",
+      createdBy: currentUser.id || currentUser.email,
+      notes: updates.walkInMobile 
+        ? (itemsWithTotals.map(i => i.description).filter(Boolean).join("; ") 
+            ? `${itemsWithTotals.map(i => i.description).filter(Boolean).join("; ")} | Mobile: ${updates.walkInMobile}` 
+            : `Mobile: ${updates.walkInMobile}`) 
+        : (itemsWithTotals.map(i => i.description).filter(Boolean).join("; ") || ""),
       items: itemsWithTotals.map(item => ({
         serviceName: item.serviceName,
         description: item.description,

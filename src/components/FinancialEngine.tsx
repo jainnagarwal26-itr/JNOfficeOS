@@ -288,6 +288,9 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
   const [customInvoiceNumber, setCustomInvoiceNumber] = useState<string>("");
   const [isSubmittingInvoice, setIsSubmittingInvoice] = useState<boolean>(false);
 
+  const currentEditingInvoice = editingInvoiceId ? invoices.find(i => i.id === editingInvoiceId) : null;
+  const [initialEditSnapshot, setInitialEditSnapshot] = useState<string>("");
+
   const handleOpenEditInvoice = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
     setCustomInvoiceNumber(inv.id);
@@ -296,21 +299,54 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
     setInvoiceDueDate(inv.dueDate);
     setDiscountAmount(inv.discountAmount || 0);
 
+    let initialTargetType: "case" | "client" = "case";
+    let initialLinkedCaseId = "";
+    let initialStandaloneId = "";
+    let initialName = "";
+    let initialAddress = "";
+    let initialMobile = "";
+    let initialGstin = "";
+
     if (inv.caseId) {
+      initialTargetType = "case";
+      initialLinkedCaseId = inv.caseId;
       setInvoiceTargetType("case");
       setLinkedCaseId(inv.caseId);
     } else {
+      initialTargetType = "client";
       setInvoiceTargetType("client");
-      setStandaloneClientId(inv.clientId);
-      if (inv.clientId === "walk-in") {
-        setWalkInName(inv.clientName);
-        setWalkInAddress(inv.walkInAddress || "");
-        setWalkInMobile(inv.walkInMobile || "");
-        setWalkInGstin(inv.walkInGstin || "");
+      const matchedClient = clients.find(c => 
+        c.id === inv.clientId || 
+        c.uuid === inv.clientId || 
+        (c.name && inv.clientName && c.name.trim().toLowerCase() === inv.clientName.trim().toLowerCase())
+      );
+
+      if (matchedClient && inv.clientId !== "walk-in") {
+        initialStandaloneId = matchedClient.id;
+        initialName = matchedClient.name || inv.clientName || "";
+        initialAddress = inv.walkInAddress || matchedClient.officeAddress || "";
+        initialMobile = inv.walkInMobile || matchedClient.mobile || "";
+        initialGstin = inv.walkInGstin || matchedClient.gstin || "";
+        setStandaloneClientId(matchedClient.id);
+        setWalkInName(initialName);
+        setWalkInAddress(initialAddress);
+        setWalkInMobile(initialMobile);
+        setWalkInGstin(initialGstin);
+      } else {
+        initialStandaloneId = "walk-in";
+        initialName = inv.clientName || "";
+        initialAddress = inv.walkInAddress || "";
+        initialMobile = inv.walkInMobile || "";
+        initialGstin = inv.walkInGstin || "";
+        setStandaloneClientId("walk-in");
+        setWalkInName(initialName);
+        setWalkInAddress(initialAddress);
+        setWalkInMobile(initialMobile);
+        setWalkInGstin(initialGstin);
       }
     }
 
-    setInvoiceItems((inv.items || []).map(item => ({
+    const mappedItems = (inv.items || []).map(item => ({
       serviceName: item.serviceName || "Service Item",
       description: item.description || "",
       quantity: Number(item.quantity || 1),
@@ -321,9 +357,57 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       sgst: Number(item.sgst ?? 0),
       igst: Number(item.igst ?? 0),
       cess: Number(item.cess ?? 0)
-    })));
+    }));
+
+    setInvoiceItems(mappedItems);
+
+    // Save initial snapshot for unsaved changes protection
+    setInitialEditSnapshot(JSON.stringify({
+      type: inv.type,
+      date: inv.date,
+      dueDate: inv.dueDate,
+      discountAmount: inv.discountAmount || 0,
+      targetType: initialTargetType,
+      linkedCaseId: initialLinkedCaseId,
+      standaloneClientId: initialStandaloneId,
+      walkInName: initialName,
+      walkInAddress: initialAddress,
+      walkInMobile: initialMobile,
+      walkInGstin: initialGstin,
+      items: mappedItems.map(it => ({ name: it.serviceName, qty: it.quantity, rate: it.rate, disc: it.discount, gst: it.gstRate, desc: it.description }))
+    }));
 
     setIsCreateModalOpen(true);
+  };
+
+  const checkHasUnsavedChanges = () => {
+    if (!editingInvoiceId || !initialEditSnapshot) return false;
+    const currentSnapshot = JSON.stringify({
+      type: invoiceType,
+      date: invoiceDate,
+      dueDate: invoiceDueDate,
+      discountAmount: discountAmount || 0,
+      targetType: invoiceTargetType,
+      linkedCaseId: linkedCaseId || "",
+      standaloneClientId: standaloneClientId || "",
+      walkInName: walkInName || "",
+      walkInAddress: walkInAddress || "",
+      walkInMobile: walkInMobile || "",
+      walkInGstin: walkInGstin || "",
+      items: invoiceItems.map(it => ({ name: it.serviceName, qty: it.quantity, rate: it.rate, disc: it.discount, gst: it.gstRate, desc: it.description }))
+    });
+    return currentSnapshot !== initialEditSnapshot;
+  };
+
+  const handleSafeCloseModal = () => {
+    if (checkHasUnsavedChanges()) {
+      if (!window.confirm("Unsaved changes will be lost. Continue?")) {
+        return;
+      }
+    }
+    setIsCreateModalOpen(false);
+    setEditingInvoiceId(null);
+    setInitialEditSnapshot("");
   };
 
   // Main Submit handler to raise/update invoice
@@ -454,9 +538,9 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           dueDate: invoiceDueDate,
           discountAmount: discountAmount,
           items: itemsToSave,
-          walkInAddress: clientId === "walk-in" ? walkInAddress.trim() : undefined,
-          walkInMobile: clientId === "walk-in" ? walkInMobile.trim() : undefined,
-          walkInGstin: clientId === "walk-in" ? walkInGstin.trim() : undefined
+          walkInAddress: clientId === "walk-in" ? walkInAddress.trim() : (walkInAddress.trim() || undefined),
+          walkInMobile: clientId === "walk-in" ? walkInMobile.trim() : (walkInMobile.trim() || undefined),
+          walkInGstin: clientId === "walk-in" ? walkInGstin.trim() : (walkInGstin.trim() || undefined)
         }, currentUser);
 
         if (!updateRes.success) {
@@ -469,13 +553,16 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           alert(`⚠️ Financial Notice:\n\n${updateRes.warning}`);
         }
 
+        const updatedNumber = customInvoiceNumber.trim() || editingInvoiceId;
+        alert(`✓ Invoice ${updatedNumber} updated successfully.`);
+
         onAddAuditLog(
           currentUser.email,
           currentUser.name,
           currentUser.role,
           "FINANCIAL_INVOICE_UPDATED",
           "DATABASE",
-          `Updated ${invoiceType} '${customInvoiceNumber.trim() || editingInvoiceId}' for Client ${clientName}.`
+          `Updated ${invoiceType} '${updatedNumber}' for Client ${clientName}.`
         );
       } else {
         const res = await FinancialRepository.createInvoiceAsync({
@@ -520,6 +607,7 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       refreshData();
       setIsCreateModalOpen(false);
       setEditingInvoiceId(null);
+      setInitialEditSnapshot("");
       
       // Reset form state
       setLinkedCaseId("");
@@ -1855,25 +1943,78 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
       <Modal
         id="financial-engine-create-invoice-modal"
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={handleSafeCloseModal}
         maxWidthClassName="max-w-4xl"
       >
         <form onSubmit={handleCreateInvoice} className="flex flex-col h-full overflow-hidden">
-          <ModalHeader onClose={() => setIsCreateModalOpen(false)}>
-            <div className="flex items-center gap-2">
+          <ModalHeader onClose={handleSafeCloseModal}>
+            <div className="flex items-center gap-2.5">
               <Receipt className="w-5 h-5 text-[#D4AF37]" />
               <div>
-                <h3 className="font-display font-extrabold text-[#0D2C6C] text-sm tracking-tight uppercase">
-                  {editingInvoiceId ? `Edit Invoice: ${editingInvoiceId}` : "Generate Enterprise Corporate Invoice"}
-                </h3>
-                <p className="text-[10px] text-slate-400 font-medium">
-                  Invoices can be linked to a corporate case or raised standalone for any client directly.
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-display font-extrabold text-[#0D2C6C] text-sm tracking-tight uppercase">
+                    {editingInvoiceId ? `Edit Tax Invoice: ${customInvoiceNumber || editingInvoiceId}` : "Generate Enterprise Corporate Invoice"}
+                  </h3>
+                  {editingInvoiceId && (
+                    <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                      Immutable Invoice No
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                  {editingInvoiceId 
+                    ? "Modify billing schedule, client snapshot, line items, and discounts. Historical payments are strictly preserved."
+                    : "Invoices can be linked to a corporate case or raised standalone for any client directly."}
                 </p>
               </div>
             </div>
           </ModalHeader>
 
           <ModalBody className="space-y-6">
+            {/* Payment & Financial Integrity Banner (Edit Mode with Payments) */}
+            {editingInvoiceId && currentEditingInvoice && (
+              <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-slate-50 border border-blue-200/80 rounded-xl space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-[#0D2C6C]" />
+                    <span className="text-xs font-black text-[#0D2C6C] uppercase tracking-wider">
+                      Financial State & Payment Integrity Lock
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                    currentEditingInvoice.status === "Paid" ? "bg-emerald-50 border-emerald-300 text-emerald-700" :
+                    currentEditingInvoice.status === "Partially Paid" ? "bg-amber-50 border-amber-300 text-amber-700" :
+                    "bg-rose-50 border-rose-300 text-rose-700"
+                  }`}>
+                    {currentEditingInvoice.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center pt-1 border-t border-blue-100/80">
+                  <div className="bg-white/90 p-2 rounded-lg border border-blue-100 shadow-2xs">
+                    <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Amount Paid (Locked)</span>
+                    <span className="text-xs font-mono font-black text-emerald-700">
+                      ₹{currentEditingInvoice.payments.reduce((s, p) => s + p.amount, 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="bg-white/90 p-2 rounded-lg border border-blue-100 shadow-2xs">
+                    <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Revised Grand Total</span>
+                    <span className="text-xs font-mono font-black text-[#0D2C6C]">
+                      ₹{liveTotals.grandTotal.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="bg-white/90 p-2 rounded-lg border border-blue-100 shadow-2xs">
+                    <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Remaining Balance</span>
+                    <span className="text-xs font-mono font-black text-rose-700">
+                      ₹{Math.max(0, liveTotals.grandTotal - currentEditingInvoice.payments.reduce((s, p) => s + p.amount, 0)).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[9px] text-blue-900/70 text-center font-medium">
+                  🔒 Historical payment receipts are immutable. Updating invoice totals recalculates balance due server-side.
+                </p>
+              </div>
+            )}
+
             {/* 1. Case & Invoice Type */}
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1.5 border-b border-slate-100">
@@ -2064,15 +2205,24 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 {currentUser.role === UserRole.OWNER && (
                   <div className="md:col-span-2">
                     <label className="block text-[10px] font-bold text-[#0D2C6C] uppercase tracking-wider mb-1 flex items-center justify-between">
-                      <span>Invoice Number / Custom Identifier (Super Admin Rights)</span>
-                      <span className="text-[9px] text-[#D4AF37] font-black bg-[#0D2C6C] px-2 py-0.5 rounded uppercase">OWNER ONLY</span>
+                      <span>Invoice Number {editingInvoiceId ? "(Immutable Canonical ID)" : "/ Custom Identifier (Super Admin Rights)"}</span>
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                        editingInvoiceId ? "bg-slate-200 text-slate-700" : "bg-[#0D2C6C] text-[#D4AF37]"
+                      }`}>
+                        {editingInvoiceId ? "IMMUTABLE NUMBER" : "OWNER ONLY"}
+                      </span>
                     </label>
                     <input
                       type="text"
                       value={customInvoiceNumber}
-                      onChange={(e) => setCustomInvoiceNumber(e.target.value)}
+                      readOnly={!!editingInvoiceId}
+                      onChange={(e) => !editingInvoiceId && setCustomInvoiceNumber(e.target.value)}
                       placeholder="e.g. JNA/2026-27/000045"
-                      className="w-full px-3 py-1.5 border border-amber-300 rounded-lg text-xs font-mono font-bold text-[#0D2C6C] bg-amber-50/40 focus:outline-none focus:border-[#D4AF37]"
+                      className={`w-full px-3 py-1.5 border rounded-lg text-xs font-mono font-bold text-[#0D2C6C] focus:outline-none ${
+                        editingInvoiceId 
+                          ? "bg-slate-100/80 border-slate-300 cursor-not-allowed text-slate-700" 
+                          : "border-amber-300 bg-amber-50/40 focus:border-[#D4AF37]"
+                      }`}
                     />
                   </div>
                 )}
@@ -2378,10 +2528,22 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
                 <span className="font-mono font-bold text-slate-800">₹{liveTotals.totalGst.toLocaleString("en-IN")}</span>
               </div>
               <div className="flex justify-between items-center text-sm pt-2 border-t border-[#0D2C6C]/10">
-                <span className="font-black text-[#0D2C6C] uppercase tracking-wide">Grand Outstanding Total:</span>
+                <span className="font-black text-[#0D2C6C] uppercase tracking-wide">Grand Revised Total:</span>
                 <span className="font-mono font-black text-[#0D2C6C] text-base">₹{liveTotals.grandTotal.toLocaleString("en-IN")}</span>
               </div>
-              <div className="text-[10px] text-slate-500 font-semibold italic">
+              {editingInvoiceId && currentEditingInvoice && currentEditingInvoice.payments && currentEditingInvoice.payments.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex justify-between items-center text-emerald-700 font-bold bg-emerald-50/80 px-2.5 py-1 rounded-lg">
+                    <span>Amount Paid (Preserved):</span>
+                    <span className="font-mono">₹{currentEditingInvoice.payments.reduce((s, p) => s + p.amount, 0).toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-rose-700 font-bold bg-rose-50/80 px-2.5 py-1 rounded-lg">
+                    <span>Balance Due:</span>
+                    <span className="font-mono">₹{Math.max(0, liveTotals.grandTotal - currentEditingInvoice.payments.reduce((s, p) => s + p.amount, 0)).toLocaleString("en-IN")}</span>
+                  </div>
+                </div>
+              )}
+              <div className="text-[10px] text-slate-500 font-semibold italic pt-1">
                 In Words: {liveTotals.words}
               </div>
             </div>
@@ -2390,10 +2552,10 @@ export default function FinancialEngine({ currentUser, onAddAuditLog }: Financia
           <ModalFooter>
             <button
               type="button"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={handleSafeCloseModal}
               className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-600 transition-colors cursor-pointer"
             >
-              Discard Draft
+              {editingInvoiceId ? "Close without Saving" : "Discard Draft"}
             </button>
             <button
               type="submit"

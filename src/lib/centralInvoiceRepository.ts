@@ -149,7 +149,7 @@ export function mapSupabaseInvoiceToInvoice(row: any, itemsRaw: any[]): Invoice 
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || new Date().toISOString(),
     walkInAddress: row.client_address || "",
-    walkInMobile: "",
+    walkInMobile: row.client_mobile || (typeof row.notes === "string" ? (row.notes.match(/Mobile:\s*([^\n\r,|]+)/i)?.[1]?.trim() || "") : ""),
     walkInGstin: row.client_gstin || ""
   };
 }
@@ -587,109 +587,17 @@ export class CentralInvoiceRepository {
 
       const { data: rpcData, error: rpcErr } = await supabase.rpc("update_central_invoice", rpcPayload);
 
-      if (!rpcErr && rpcData && rpcData.success) {
-        if (rpcData.warning) {
-          console.warn("[CentralInvoiceRepository] update_central_invoice warning:", rpcData.warning);
-        }
-
-        addAuditLog(
-          "system@jn.internal",
-          "Central Invoice Engine",
-          UserRole.OWNER,
-          "INVOICE_UPDATED",
-          "DATABASE",
-          `Updated invoice ${rpcData.invoice_number} (Total: INR ${rpcData.total_amount}, Paid: INR ${rpcData.amount_paid}, Balance: INR ${rpcData.balance_due}, Status: ${rpcData.status}) in backend Supabase database`
-        );
-
-        const refreshed = await this.getInvoiceById(rpcData.invoice_id || invoiceIdOrNumber);
-        return { success: true, invoice: refreshed.invoice, warning: rpcData.warning };
-      }
-
       if (rpcErr) {
-        console.warn("[CentralInvoiceRepository] RPC update_central_invoice error, attempting fallback:", rpcErr);
+        console.error("[CentralInvoiceRepository] RPC update_central_invoice error:", rpcErr);
+        return { success: false, error: rpcErr.message || "Failed to execute update_central_invoice RPC." };
       }
 
-      // 2. Fallback with strict payment integrity preservation (Rules 1-5)
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceIdOrNumber);
-      let selQuery = supabase.from("jn_invoices").select("*");
-      if (isUuid) {
-        selQuery = selQuery.eq("id", invoiceIdOrNumber);
-      } else {
-        selQuery = selQuery.eq("invoice_number", invoiceIdOrNumber);
+      if (!rpcData || !rpcData.success) {
+        return { success: false, error: rpcData?.error || "Invoice update was rejected by server-side RPC validation." };
       }
 
-      const { data: existingRow, error: selErr } = await selQuery.single();
-      if (selErr || !existingRow) throw selErr || new Error("Invoice not found for update.");
-
-      const currentPaid = Number(existingRow.amount_paid || 0);
-      const newTotal = payload.totalAmount !== undefined ? Number(payload.totalAmount) : Number(existingRow.total_amount);
-      const newBalance = Math.max(0, newTotal - currentPaid);
-      let newStatus: string;
-      let warningText: string | undefined = undefined;
-
-      if (currentPaid <= 0) {
-        newStatus = "UNPAID";
-      } else if (currentPaid < newTotal) {
-        newStatus = "PARTIALLY_PAID";
-      } else {
-        newStatus = "PAID";
-      }
-
-      if (currentPaid > newTotal) {
-        warningText = `Paid amount (₹${currentPaid.toLocaleString("en-IN")}) exceeds revised invoice total (₹${newTotal.toLocaleString("en-IN")}). Refund or credit-note review required.`;
-      }
-
-      const updateHeader: any = {
-        total_amount: newTotal,
-        amount_paid: currentPaid, // Sacred payment preservation
-        balance_due: newBalance,
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      };
-
-      if (payload.newInvoiceNumber) updateHeader.invoice_number = payload.newInvoiceNumber;
-      if (payload.invoiceType) updateHeader.invoice_type = payload.invoiceType;
-      if (payload.assignedStaffIds) updateHeader.assigned_staff = payload.assignedStaffIds;
-      if (payload.invoiceDate) updateHeader.invoice_date = payload.invoiceDate;
-      if (payload.dueDate) updateHeader.due_date = payload.dueDate;
-      if (payload.subTotal !== undefined) updateHeader.sub_total = payload.subTotal;
-      if (payload.discountAmount !== undefined) updateHeader.discount_amount = payload.discountAmount;
-      if (payload.cgstAmount !== undefined) updateHeader.cgst_amount = payload.cgstAmount;
-      if (payload.sgstAmount !== undefined) updateHeader.sgst_amount = payload.sgstAmount;
-      if (payload.igstAmount !== undefined) updateHeader.igst_amount = payload.igstAmount;
-      if (payload.gstAmount !== undefined) updateHeader.gst_amount = payload.gstAmount;
-      if (payload.notes !== undefined) updateHeader.notes = payload.notes;
-      if (payload.terms !== undefined) updateHeader.terms = payload.terms;
-
-      const { data: updatedHeader, error: headerErr } = await supabase
-        .from("jn_invoices")
-        .update(updateHeader)
-        .eq("id", existingRow.id)
-        .select("id, invoice_number")
-        .single();
-
-      if (headerErr) throw headerErr;
-
-      // Update line items if provided
-      if (payload.items && payload.items.length > 0 && updatedHeader) {
-        await supabase.from("jn_invoice_items").delete().eq("invoice_id", updatedHeader.id);
-
-        const itemPayloads = payload.items.map(item => ({
-          invoice_id: updatedHeader.id,
-          service_id: (item.serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.serviceId)) ? item.serviceId : null,
-          service_name: item.serviceName,
-          description: item.description || "",
-          sac_code: item.sacCode || "998311",
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          discount: item.discount || 0.00,
-          taxable_amount: item.taxableAmount,
-          gst_rate: item.gstRate,
-          gst_amount: item.gstAmount,
-          total_amount: item.totalAmount
-        }));
-
-        await supabase.from("jn_invoice_items").insert(itemPayloads);
+      if (rpcData.warning) {
+        console.warn("[CentralInvoiceRepository] update_central_invoice warning:", rpcData.warning);
       }
 
       addAuditLog(
@@ -698,14 +606,14 @@ export class CentralInvoiceRepository {
         UserRole.OWNER,
         "INVOICE_UPDATED",
         "DATABASE",
-        `Updated invoice ${updatedHeader.invoice_number} in backend Supabase database`
+        `Updated invoice ${rpcData.invoice_number} (Total: INR ${rpcData.total_amount}, Paid: INR ${rpcData.amount_paid}, Balance: INR ${rpcData.balance_due}, Status: ${rpcData.status}) in backend Supabase database`
       );
 
-      const refreshed = await this.getInvoiceById(updatedHeader.id);
-      return { success: true, invoice: refreshed.invoice, warning: warningText };
+      const refreshed = await this.getInvoiceById(rpcData.invoice_id || invoiceIdOrNumber);
+      return { success: true, invoice: refreshed.invoice, warning: rpcData.warning };
     } catch (err: any) {
       console.error("[CentralInvoiceRepository] updateInvoice error:", err);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || "An unexpected error occurred while updating the invoice." };
     }
   }
 
