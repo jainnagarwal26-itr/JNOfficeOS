@@ -118,7 +118,7 @@ export default function App() {
                 passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash",
                 permissions: {
                   clientCrmView: true,
-                  clientCrmEdit: authUser.role === "OWNER",
+                  clientCrmEdit: true,
                   serviceMasterView: true,
                   serviceMasterEdit: authUser.role === "OWNER",
                   invoiceView: true,

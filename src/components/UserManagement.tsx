@@ -85,7 +85,7 @@ export default function UserManagement({ currentUser, onAddAuditLog }: UserManag
           passwordHash: dbUser.password_hash || "$2a$10$SupabaseAuthManagedIdentityHash",
           permissions: {
             clientCrmView: true,
-            clientCrmEdit: dbUser.role === "OWNER",
+            clientCrmEdit: true,
             serviceMasterView: true,
             serviceMasterEdit: dbUser.role === "OWNER",
             invoiceView: true,

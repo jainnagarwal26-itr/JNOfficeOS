@@ -172,7 +172,7 @@ function AutomationHubInner({ currentUser, onAddAuditLog }: AutomationHubProps) 
               passwordHash: u.password_hash || "",
               permissions: {
                 clientCrmView: true,
-                clientCrmEdit: u.role === "OWNER",
+                clientCrmEdit: true,
                 serviceMasterView: true,
                 serviceMasterEdit: u.role === "OWNER",
                 invoiceView: true,

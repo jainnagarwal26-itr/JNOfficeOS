@@ -122,7 +122,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               passwordHash: "$2a$10$SupabaseAuthManagedIdentityHash",
               permissions: {
                 clientCrmView: true,
-                clientCrmEdit: authUser.role === "OWNER",
+                clientCrmEdit: true,
                 serviceMasterView: true,
                 serviceMasterEdit: authUser.role === "OWNER",
                 invoiceView: true,
@@ -186,7 +186,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               passwordHash: dbUser.password_hash || "",
               permissions: {
                 clientCrmView: true,
-                clientCrmEdit: dbUser.role === "OWNER",
+                clientCrmEdit: true,
                 serviceMasterView: true,
                 serviceMasterEdit: dbUser.role === "OWNER",
                 invoiceView: true,
